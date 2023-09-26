@@ -6,6 +6,10 @@ This is noetic version of [turtlebot3 machine learning | https://emanual.robotis
 
 It is just a basic migration, but there will be no more upgrade for this pkg. If you suffer problem using this repo, just modify as you want, add more code.
 
+## env
+python 3.8
+torch 11.7
+
 ## simulation
 1. make sure you change file excutable
    `chmod +x turtlebot3_dqn_stage_1`
