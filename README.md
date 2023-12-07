@@ -17,5 +17,5 @@ This is noetic version of [turtlebot3 machine learning](https://emanual.robotis.
 1. make sure you change file excutable
    `chmod +x turtlebot3_dqn_stage_1`
 2. catkin build
-3. `roslaunch turtlebot3_gazebo turtlebot3_dqn_stage_30.launch`
-4. `roslaunch dqn_ttb turtlebot3_dqn_stage_1.launch`
+3. `roslaunch turtlebot3_gazebo turtlebot3_dqn_stage_2.launch`
+4. `roslaunch dqn_ttb turtlebot3_dqn_stage_30.launch`
