@@ -19,3 +19,6 @@ This is noetic version of [turtlebot3 machine learning](https://emanual.robotis.
 2. catkin build
 3. `roslaunch turtlebot3_gazebo turtlebot3_dqn_stage_2.launch`
 4. `roslaunch dqn_ttb turtlebot3_dqn_stage_30.launch`
+
+## Youtube
+[Video of simulation](https://youtu.be/DUBrjx43RE8?si=EaVsYQ6waJKiJW0l)
