@@ -11,6 +11,11 @@
 
 추가적으로 기본 빌더(`catkin_make`)를 사용하지 않고  [`catkin_tools`](https://catkin-tools.readthedocs.io/en/latest/verbs/catkin_build.html)를 사용하였으며, 아래 설명에서 빌드 과정은 이를 기반으로 함을 밝힙니다.
 
+아래에 코드 실행 순서를 작성하였습니다. 기본적으로 `Ubuntu base python`을 이용하며 필요한 파이썬 라이브러리는 셀프로 설치해주세요.
+   ```
+   torch torchvision torchaudio tqdm matplotlib seaborn numpy 
+   ```
+
 # 1. Deep Q-Learning
 코드는 로보티즈의 [머신러닝 튜토리얼](https://emanual.robotis.com/docs/en/platform/turtlebot3/machine_learning/#machine-learning) 코드와 [PyTorch(한국 사용자) DQN 튜토리얼](https://tutorials.pytorch.kr/intermediate/reinforcement_q_learning.html)을 기반으로 만들어졌습니다.
 
@@ -29,7 +34,7 @@
    git clone https://github.com/redEddie/turtlebot3_machine_learning.git
    ```
 
-1. `/turtlebot3_machine_learning`패키지 밑의 `/nodes`의 파일들은 실행가능한 파일로 속성을 변환해주세요.
+1. (이미 적용되어있을 수 있음.)`/turtlebot3_machine_learning`패키지 밑의 `/nodes`의 파일들은 실행가능한 파일로 속성을 변환해주세요.
 
    ```chmod +x turtlebot3_dqn_stage_1```
 
