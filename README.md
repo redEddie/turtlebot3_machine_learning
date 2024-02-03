@@ -1,5 +1,5 @@
-# ttb_dqn
- 터틀봇 DQN
+# Turtlebot3 Machine Learning
+ 1. 터틀봇 DQN
 
 ## about this repo
 This is noetic version of [turtlebot3 machine learning](https://emanual.robotis.com/docs/en/platform/turtlebot3/machine_learning/#machine-learning).
