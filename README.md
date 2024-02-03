@@ -36,17 +36,33 @@
 
 1. (이미 적용되어있을 수 있음.)`/turtlebot3_machine_learning`패키지 밑의 `/nodes`의 파일들은 실행가능한 파일로 속성을 변환해주세요.
 
-   ```chmod +x turtlebot3_dqn_stage_1```
+   ```
+   chmod +x turtlebot3_dqn_stage_1
+   ```
 
 1. `ROS` 패키지를 빌드해주세요.
-   ```catkin build```
+
+   ```
+   catkin build
+   ```
+
 1. 패키지를 소스해주세요.
+
    ```
    cd ~/catkin_ws
    source ./devel/setup.bash
    ```
-1. `roslaunch turtlebot3_gazebo turtlebot3_dqn_stage_2.launch`
-1. `roslaunch dqn_ttb turtlebot3_dqn_stage_30.launch`
+
+1. Gazebo 환경에 `월드`와 `머신`을 로드해주세요.
+
+   ```
+   roslaunch turtlebot3_gazebo turtlebot3_dqn_stage_2.launch
+   ```
+
+1. 알고리즘을 동작시켜주세요.
+   ```
+   roslaunch dqn_ttb turtlebot3_dqn_stage_30.launch
+   ```
 
 
 
