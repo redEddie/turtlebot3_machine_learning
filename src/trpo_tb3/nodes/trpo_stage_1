@@ -12,7 +12,7 @@ from collections import deque, namedtuple
 
 from std_msgs.msg import Float32MultiArray
 from src.trpo_env_1 import Env
-from src.trpo_model import DQN
+from src.trpo_model import *
 from src.trpo_memory import ReplayMemory
 from src.trpo_saving import SaveData
 
@@ -21,143 +21,227 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 
+if torch.cuda.is_available():
+    from torch.cuda import FloatTensor
+
+    torch.set_default_tensor_type(torch.cuda.FloatTensor)
+else:
+    from torch import FloatTensor
+
+
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 Transition = namedtuple("Transition", ("state", "action", "reward", "next_state"))
 
 
-class ReinforceAgent:
-    def __init__(self, state_size, action_size):
-        self.pub_result = rospy.Publisher("result", Float32MultiArray, queue_size=5)
-        self.result = Float32MultiArray()
-        ## loading model
-        self.load_episode = 0
-        self.load_file = "stage_30-10_policy_net_1000"
-        self.load_memory = False
-        self.memory_file = "memory1000"
-        ## hyper parameter
-        self.EPISODE = 20  ## 500 => 1.5h, 8000 => 1d
-        self.episode_step = 6000  ## 40e => 5000
-        self.GAMMA = 0.99  # discount factor
-        self.LR = 1e-4
-        self.epsilon = 1.0
-        self.epsilon_decay = 2000
-        self.epsilon_min = 0.01
-        self.epsilon_threshold = 1.0
-        self.batch_size = 64  # can be modified as you want. upon your vram.
-        self.train_start = 64
-        self.TAU = 0.8
-        ## import external file
-        self.evaluation = False
-        self.memory = ReplayMemory(5000)  # can be modified as you want. upon your vram.
-        self.env = Env(action_size)
-        self.save_data = SaveData(str("30-10"))
-        ## DQN
-        self.state_size = state_size
-        self.action_size = action_size
-        self.policy_net = DQN(state_size, action_size).to(device)
-        self.target_net = DQN(state_size, action_size).to(device)
-        # self.optimizer = optim.RMSprop(self.policy_net.parameters(), lr=self.LR, alpha=0.9, eps=1e-06)
-        self.optimizer = optim.AdamW(
-            self.policy_net.parameters(), lr=self.LR, amsgrad=True
-        )
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+class TRPO(Module):
+    def __init__(self, state_dim, action_dim, discrete=False) -> None:
+        super().__init__()
 
-    def getAction(self, state, global_step):
-        global is_random
+        self.state_dim = state_dim
+        self.action_dim = action_dim
+        self.discrete = discrete
+        self.use_baseline = True
 
-        self.epsilon_threshold = self.epsilon_min + (
-            self.epsilon - self.epsilon_min
-        ) * np.exp(-1.0 * (global_step + self.load_episode) / self.epsilon_decay)
+        self.pi = PolicyNetwork(self.state_dim, self.action_dim, self.discrete)
+        if self.use_baseline:
+            self.v = ValueNetwork(self.state_dim)
 
-        if np.random.rand() > self.epsilon_threshold:
-            is_random = False
-            self.policy_net.eval()
-            with torch.no_grad():
-                return self.policy_net(state).max(1)[1].view(1, 1)
-
+    def get_networks(self):
+        if self.use_baseline:
+            return [self.pi, self.v]
         else:
-            is_random = True
-            return torch.tensor(
-                [[random.randrange(self.action_size)]], device=device, dtype=torch.long
+            return [self.pi]
+
+    def act(self, state):
+        self.pi.eval()
+
+        state = FloatTensor(state)
+        distb = self.pi(state)
+
+        action = distb.sample().detach().cpu().numpy()
+
+        return action
+
+    def train(self, env, render=False):
+        lr = 1e-3
+        num_iters = 200  # Episode
+        num_steps_per_iter = 2000  # max_iter per episode
+        horizon = None
+        discount = 0.99
+        max_kl = 0.01
+        cg_damping = 0.1
+        normalize_return = True
+        use_baseline = True
+
+        if use_baseline:
+            opt_v = torch.optim.Adam(self.v.parameters(), lr)
+
+        rwd_iter_means = []
+        for i in range(num_iters):
+            rwd_iter = []
+
+            obs = []
+            acts = []
+            rets = []
+            disc = []
+
+            steps = 0
+            while steps < num_steps_per_iter:
+                ep_rwds = []
+                ep_disc_rwds = []
+                ep_disc = []
+
+                t = 0
+                done = False
+
+                ob = env.reset()
+
+                while not done and steps < num_steps_per_iter:
+                    act = self.act(ob)
+
+                    obs.append(ob)
+                    acts.append(act)
+
+                    if render:
+                        env.render()
+                    observation, rwd, truncated = env.step(act)
+
+                    ep_rwds.append(rwd)
+                    ep_disc_rwds.append(rwd * (discount**t))
+                    ep_disc.append(discount**t)
+
+                    t += 1
+                    steps += 1
+
+                    if horizon is not None:
+                        if t >= horizon:
+                            done = True
+                            break
+
+                ep_disc = FloatTensor(ep_disc)
+
+                ep_disc_rets = FloatTensor([sum(ep_disc_rwds[i:]) for i in range(t)])
+                ep_rets = ep_disc_rets / ep_disc
+
+                rets.append(ep_rets)
+                disc.append(ep_disc)
+
+                if done:
+                    rwd_iter.append(np.sum(ep_rwds))
+
+            rwd_iter_means.append(np.mean(rwd_iter))
+            print("Iterations: {},   Reward Mean: {}".format(i + 1, np.mean(rwd_iter)))
+
+            obs = FloatTensor(np.array(obs))
+            acts = FloatTensor(np.array(acts))
+            rets = torch.cat(rets)
+            disc = torch.cat(disc)
+
+            if normalize_return:
+                rets = (rets - rets.mean()) / rets.std()
+
+            if use_baseline:
+                self.v.eval()
+                delta = (rets - self.v(obs).squeeze()).detach()
+
+                self.v.train()
+
+                opt_v.zero_grad()
+                loss = (-1) * disc * delta * self.v(obs).squeeze()
+                loss.mean().backward()
+                opt_v.step()
+
+            self.pi.train()
+            old_params = UTILS.get_flat_params(self.pi).detach()
+            old_distb = self.pi(obs)
+
+            def L():
+                distb = self.pi(obs)
+
+                if use_baseline:
+                    return (
+                        disc
+                        * delta
+                        * torch.exp(
+                            distb.log_prob(acts) - old_distb.log_prob(acts).detach()
+                        )
+                    ).mean()
+                else:
+                    return (
+                        disc
+                        * rets
+                        * torch.exp(
+                            distb.log_prob(acts) - old_distb.log_prob(acts).detach()
+                        )
+                    ).mean()
+
+            def kld():
+                distb = self.pi(obs)
+
+                if self.discrete:
+                    old_p = old_distb.probs.detach()
+                    p = distb.probs
+
+                    return (old_p * (torch.log(old_p) - torch.log(p))).sum(-1).mean()
+
+                else:
+                    old_mean = old_distb.mean.detach()
+                    old_cov = old_distb.covariance_matrix.sum(-1).detach()
+                    mean = distb.mean
+                    cov = distb.covariance_matrix.sum(-1)
+
+                    return (0.5) * (
+                        (old_cov / cov).sum(-1)
+                        + (((old_mean - mean) ** 2) / cov).sum(-1)
+                        - self.action_dim
+                        + torch.log(cov).sum(-1)
+                        - torch.log(old_cov).sum(-1)
+                    ).mean()
+
+            grad_kld_old_param = UTILS.get_flat_grads(kld(), self.pi)
+
+            def Hv(v):
+                hessian = UTILS.get_flat_grads(
+                    torch.dot(grad_kld_old_param, v), self.pi
+                ).detach()
+
+                return hessian + cg_damping * v
+
+            g = UTILS.get_flat_grads(L(), self.pi).detach()
+
+            s = UTILS.conjugate_gradient(Hv, g).detach()
+            Hs = Hv(s).detach()
+
+            new_params = UTILS.rescale_and_linesearch(
+                g, s, Hs, max_kl, L, kld, old_params, self.pi
             )
 
-    def trainModel(self, length_memory, start_length):
-        if length_memory < start_length:
-            return
-        transitions = agent.memory.sample(self.batch_size)
-        mini_batch = Transition(*zip(*transitions))
+            UTILS.set_params(self.pi, new_params)
 
-        # state_batch = torch.cat(mini_batch.state, dim=0).to(device)
-        # action_batch = torch.cat(mini_batch.action, dim=0).to(device)
-        # reward_batch = torch.cat(mini_batch.reward, dim=0).to(device)
-
-        state_batch = torch.cat([s.to(device) for s in mini_batch.state], dim=0)
-        action_batch = torch.cat([a.to(device) for a in mini_batch.action], dim=0)
-        reward_batch = torch.cat([r.to(device) for r in mini_batch.reward], dim=0)
-
-        non_final_mask = torch.tensor(
-            tuple(map(lambda s: s is not None, mini_batch.next_state)),
-            dtype=torch.bool,
-        ).to(device)
-        non_final_next_states = torch.cat(
-            [s.to(device) for s in mini_batch.next_state if s is not None]
-        ).to(device)
-
-        self.policy_net.train()
-        action_value = (
-            self.policy_net(state_batch).gather(1, action_batch).to(device)
-        )  # [64, 5] -> [64, 1] action 배치가 인덱스이므로 5개중에서 선택한걸 고름.
-
-        self.target_net.eval()
-        next_state_value = torch.zeros(self.batch_size, device=device)  # [64]
-        with torch.no_grad():  # policy는 업데이트해야하니까, 그리고 target은 업데이트 안 하니까.
-            next_state_value[non_final_mask] = self.target_net(
-                non_final_next_states
-            ).max(1)[
-                0
-            ]  # max로 최대의 보상 [64, 5] -> [64]
-
-        expected_q_value = (
-            next_state_value * self.GAMMA
-        ) + reward_batch  # [64, 1] -> [64]
-
-        # criterian = F.smooth_l1_loss()
-        criterian = nn.SmoothL1Loss()
-        loss = criterian(
-            input=action_value, target=expected_q_value.unsqueeze(1)
-        )  # unsqeeze -> [64, 1]
-
-        self.optimizer.zero_grad()  # 기울기 초기화
-        loss.backward()  # 역전파 계산
-        # torch.nn.utils.clip_grad_value_(self.policy_net.parameters(), 120)
-        self.optimizer.step()  # 가중치 업데이트
-
-        ## 역전파 후의 loss의 값을 저장하여 모델의 개선을 추적 => 내가 보려고.
-        # self.loss = loss
-        self.loss_item = loss.item()
+        return rwd_iter_means
 
 
 if __name__ == "__main__":
+    # (ROS print) torch.cuda.is_available()
     rospy.loginfo("%s", torch.cuda.is_available())
-    ## ROS node init
-    rospy.init_node("turtlebot3_dqn_stage_1")
+    # (ROS node init) trpo_stage_1
+    rospy.init_node("trpo_stage_1")
+    # (ROS pub) result
     pub_result = rospy.Publisher("result", Float32MultiArray, queue_size=5)
-    pub_get_action = rospy.Publisher("get_action", Float32MultiArray, queue_size=5)
-
     result = Float32MultiArray()
+    # (ROS pub) get_action
+    pub_get_action = rospy.Publisher("get_action", Float32MultiArray, queue_size=5)
     get_action = Float32MultiArray()
 
-    ## agent init
+    # (Python) agent init
     state_size = 30
     action_size = 5
-    agent = ReinforceAgent(state_size, action_size)
+    agent = TRPO(state_size, action_size)
     scores, episodes = [], []
     global_step = 0
     start_time = time.time()
-    ## 출력용 변수
     agent.loss_item = 0
-    ## 내부 계산용 변수
     score = 0
     goal = False
     end_step = 150  ## 150 => 30s
