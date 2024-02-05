@@ -2,7 +2,6 @@
 
 import rospy
 import os
-import json
 import numpy as np
 import random
 import time
@@ -12,10 +11,10 @@ sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
 from collections import deque, namedtuple
 
 from std_msgs.msg import Float32MultiArray
-from src.turtlebot3_dqn.dqn_env_30 import Env
-from src.turtlebot3_dqn.dqn_model30 import DQN
-from src.turtlebot3_dqn.dqn_memory30 import ReplayMemory
-from src.turtlebot3_dqn.dqn_saving import SaveData
+from src.trpo_env_1 import Env
+from src.trpo_model import DQN
+from src.trpo_memory import ReplayMemory
+from src.trpo_saving import SaveData
 
 import torch
 import torch.nn as nn
@@ -32,12 +31,12 @@ class ReinforceAgent:
         self.pub_result = rospy.Publisher("result", Float32MultiArray, queue_size=5)
         self.result = Float32MultiArray()
         ## loading model
-        self.load_episode = 1000
+        self.load_episode = 0
         self.load_file = "stage_30-10_policy_net_1000"
-        self.load_memory = True
+        self.load_memory = False
         self.memory_file = "memory1000"
         ## hyper parameter
-        self.EPISODE = 1000  ## 500 => 1.5h, 8000 => 1d
+        self.EPISODE = 20  ## 500 => 1.5h, 8000 => 1d
         self.episode_step = 6000  ## 40e => 5000
         self.GAMMA = 0.99  # discount factor
         self.LR = 1e-4
@@ -50,7 +49,7 @@ class ReinforceAgent:
         self.TAU = 0.8
         ## import external file
         self.evaluation = False
-        self.memory = ReplayMemory(1000)  # can be modified as you want. upon your vram.
+        self.memory = ReplayMemory(5000)  # can be modified as you want. upon your vram.
         self.env = Env(action_size)
         self.save_data = SaveData(str("30-10"))
         ## DQN
@@ -142,7 +141,7 @@ class ReinforceAgent:
 if __name__ == "__main__":
     rospy.loginfo("%s", torch.cuda.is_available())
     ## ROS node init
-    rospy.init_node("turtlebot3_dqn_stage_2")
+    rospy.init_node("turtlebot3_dqn_stage_1")
     pub_result = rospy.Publisher("result", Float32MultiArray, queue_size=5)
     pub_get_action = rospy.Publisher("get_action", Float32MultiArray, queue_size=5)
 

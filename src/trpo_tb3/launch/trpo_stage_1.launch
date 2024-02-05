@@ -1,0 +1,5 @@
+<launch>
+  <arg name="stage" default="1"/>
+  <param name="stage_number"  value="$(arg stage)"/>
+  <node pkg="trpo_tb3" type="trpo_stage_1" name="trpo_stage_1" output="screen" />
+</launch>
