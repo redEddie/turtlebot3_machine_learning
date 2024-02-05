@@ -40,8 +40,10 @@
    chmod +x turtlebot3_dqn_stage_1
    ```
 
-1. turtlebot3 
-   [link](https://emanual.robotis.com/docs/en/platform/turtlebot3/machine_learning/#set-state)
+1. `burger`의 `.xacro`를 수정합니다. 이는 센서(LDS)의 정보를 수정하는 것으로 실제 로봇에 적용할 때는 그에 맞추어 다시 학습시켜야 합니다.
+
+   DQN 코드는 [링크의 메뉴얼](https://emanual.robotis.com/docs/en/platform/turtlebot3/machine_learning/#set-state)을 따라합니다.
+   
    ```
    roscd turtlebot3_description
    cd ./urdf
