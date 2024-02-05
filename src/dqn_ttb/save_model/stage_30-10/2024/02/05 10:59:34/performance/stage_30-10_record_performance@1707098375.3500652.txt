@@ -1,2 +1,0 @@
-episode: 1, score: 0, memory: 20, epsilon: 1.0, loss: 0, step: 19, time: 0:0:5
-episode: 2, score: 0, memory: 51, epsilon: 1.0, loss: 0, step: 30, time: 0:0:13

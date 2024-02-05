@@ -1,7 +1,0 @@
-episode: 1, score: 0, memory: 15, epsilon: 1.0, loss: 0, step: 14, time: 0:0:4
-episode: 2, score: 0, memory: 142, epsilon: 1.0, loss: 0.592201592749137, step: 126, time: 0:0:32
-episode: 3, score: 0, memory: 174, epsilon: 1.0, loss: 0.4472806158473567, step: 31, time: 0:0:39
-episode: 4, score: 0, memory: 201, epsilon: 1.0, loss: 16.004742546637974, step: 26, time: 0:0:46
-episode: 5, score: 0, memory: 294, epsilon: 1.0, loss: 15.885304216116612, step: 92, time: 0:1:6
-episode: 6, score: 0, memory: 321, epsilon: 1.0, loss: 0.47268097358982764, step: 26, time: 0:1:12
-episode: 7, score: 0, memory: 352, epsilon: 1.0, loss: 15.767547551196019, step: 30, time: 0:1:20
