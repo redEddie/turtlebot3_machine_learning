@@ -1,4 +1,4 @@
-#!/home/muji/mambaforge/bin/python
+#!/usr/bin/python3
 
 import rospy
 import os

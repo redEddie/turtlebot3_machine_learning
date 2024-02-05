@@ -40,6 +40,14 @@
    chmod +x turtlebot3_dqn_stage_1
    ```
 
+1. turtlebot3 
+   [link](https://emanual.robotis.com/docs/en/platform/turtlebot3/machine_learning/#set-state)
+   ```
+   roscd turtlebot3_description
+   cd ./urdf
+   gedit turtlebot3_burger.gazebo.xacro
+   ```
+
 1. `ROS` 패키지를 빌드해주세요.
 
    ```

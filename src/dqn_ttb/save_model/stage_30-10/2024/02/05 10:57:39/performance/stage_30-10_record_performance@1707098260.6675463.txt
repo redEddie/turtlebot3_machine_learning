@@ -1,0 +1,2 @@
+episode: 1, score: 0, memory: 55482, epsilon: 1.0, loss: 7.894280109479239, step: 14, time: 0:0:25
+episode: 2, score: 0, memory: 55505, epsilon: 1.0, loss: 7.880027182323925, step: 22, time: 0:0:30

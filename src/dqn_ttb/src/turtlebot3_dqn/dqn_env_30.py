@@ -65,6 +65,8 @@ class Env:
         # min_range = 0.13
         collision = False
 
+        # adds the scan data to the scan_range list(origianally 360 but reduced to 24)
+        # https://emanual.robotis.com/docs/en/platform/turtlebot3/machine_learning/#set-state
         for i in range(len(scan.ranges)):
             if scan.ranges[i] == float("Inf"):
                 scan_range.append(3.5)
