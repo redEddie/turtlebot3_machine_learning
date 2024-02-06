@@ -72,27 +72,27 @@ class TRPO(Module):
     def end_of_episode(self, episode, local_step, truncated, rwd):
         done = False
         goal = True if rwd == 1000 else False
-        time_out = True if local_step > 150 else False
+        time_out = True if rwd == -100 else False
 
         # 종료조건 3가지(1. 목표지점 도달, 2. 충돌, 3. 시간초과)
         if goal:
-            rospy.loginfo("[Learning] Goal Reached. @step %d", local_step)
+            print("[Learning] Goal Reached. @step ", local_step)
             done = True
 
         if truncated:
-            rospy.loginfo("[Learning] Collision. @step %d", local_step)
+            print("[Learning] Collision. @step ", local_step)
             done = True
 
         if time_out:
-            rospy.loginfo("[Learning] Time out. @step %d", local_step)
+            print("[Learning] Time out. @step ", local_step)
             done = True
 
         return done
 
     def train(self):
         lr = 1e-3
-        num_iters = 200  # Episode
-        num_steps_per_iter = 2000  # max_iter per episode
+        num_iters = 2  # Episode
+        num_steps_per_iter = 150  # max_iter per episode
         horizon = None
         discount = 0.99
         max_kl = 0.01
@@ -128,7 +128,9 @@ class TRPO(Module):
 
                     obs.append(ob)
                     acts.append(act)
-                    ob, rwd, truncated = self.env.step(act)
+                    ob, rwd, truncated = self.env.step(act, steps, num_steps_per_iter)
+
+                    done = self.end_of_episode(i, t, truncated, rwd)
 
                     ep_rwds.append(rwd)
                     ep_disc_rwds.append(rwd * (discount**t))
@@ -142,7 +144,7 @@ class TRPO(Module):
                             done = True
                             break
 
-                    done = self.end_of_episode(i, t, truncated, rwd)
+                    print("\nsteps: ", steps, "reward: ", rwd)
 
                 ep_disc = torch.tensor(ep_disc, dtype=torch.float32)
 
@@ -160,16 +162,18 @@ class TRPO(Module):
             rwd_iter_means.append(np.mean(rwd_iter))
             print("Iterations: {},   Reward Mean: {}".format(i + 1, np.mean(rwd_iter)))
 
-            obs = torch.tensor(np.array(obs), dtype=torch.float32)
-            acts = torch.tensor(np.array(acts), dtype=torch.float32)
-            rets = torch.cat(rets)
-            disc = torch.cat(disc)
+            obs = torch.tensor(np.array(obs), dtype=torch.float32).to(self.device)
+            acts = torch.tensor(np.array(acts), dtype=torch.float32).to(self.device)
+            rets = torch.cat(rets).to(self.device)
+            disc = torch.cat(disc).to(self.device)
 
             if normalize_return:
                 rets = (rets - rets.mean()) / rets.std()
 
             if use_baseline:  # Policy Based Optimization
                 self.v.eval()
+                # print(next(self.v.parameters()).device)
+                # print(obs.device)
                 delta = (rets - self.v(obs).squeeze()).detach()
 
                 self.v.train()
@@ -306,7 +310,7 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     agent = TRPO(state_size, action_size, discrete=False, stage=stage).to(device)
     utils = UTILS()
-    utils.save_model(agent)
+    # utils.save_model(agent)
     # (Python) learning start
     tic = time.time()
     rwd_iter_means = agent.train()
@@ -370,13 +374,14 @@ def main():
     ### TO DO
     # rospy.loginfo("[Learning] Start!!")
 
-    rospy.loginfo("[Notice] Finish! Press any key to exit.")
-    rospy.loginfo("[Notice] Mean of rewards: %f", rwd_iter_means)
+    print("[Learning] Finish! Press any key to exit.")
+    print("[Learning] Mean of rewards: ")
+    print(rwd_iter_means)
     # rospy.loginfo("[Notice] Final score: %d, loss: %d", score, agent.loss_item)
 
     m, s = divmod(int(time.time() - tic), 60)
     h, m = divmod(m, 60)
-    rospy.loginfo("[Notice] Time: %d h %d m %d s", h, m, s)
+    print("[Learning] Time consumed: %d h %d m %d s", h, m, s)
 
     # agent.save_data.recordPerformance(
     #     e,

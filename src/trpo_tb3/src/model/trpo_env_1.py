@@ -114,15 +114,19 @@ class Env:
             collision,
         )  # 24 + 5 and 1
 
-    def setReward(self, state, collision, linear_vel, ang_vel):
+    def setReward(
+        self, state, collision, linear_vel, ang_vel, steps, num_steps_per_iter
+    ):
         scan_range = state[:-4]
         heading = state[-4]
         current_distance = state[-3]
 
-        reward = self.goal_distance - current_distance
+        min_scan_range = min(scan_range)
+
+        reward = round(8 * (self.goal_distance - current_distance) * min_scan_range, 2)
 
         if collision:
-            rospy.loginfo("Collision!!")
+            print("[Learning] Collision!!")
             reward = -500
             self.pub_cmd_vel.publish(Twist())
             self.goal_x, self.goal_y = self.respawn_goal.getPosition(True, delete=True)
@@ -130,8 +134,16 @@ class Env:
             self.get_goalbox = False
 
         if self.get_goalbox:
-            rospy.loginfo("Goal!!")
+            print("[Learning] Goal!!")
             reward = 1000
+            self.pub_cmd_vel.publish(Twist())
+            self.goal_x, self.goal_y = self.respawn_goal.getPosition(True, delete=True)
+            self.goal_distance = self.getGoalDistace()
+            self.get_goalbox = False
+
+        if (steps + 1) == num_steps_per_iter:
+            print("[Learning] Time out!!")
+            reward = -100
             self.pub_cmd_vel.publish(Twist())
             self.goal_x, self.goal_y = self.respawn_goal.getPosition(True, delete=True)
             self.goal_distance = self.getGoalDistace()
@@ -142,12 +154,14 @@ class Env:
     def round_value_upto_2(self, value):
         return round(value, 2) if value is not None else 0
 
-    def step(self, action):
+    def step(self, action, steps, num_steps_per_iter):
         max_linear_vel = 0.22
-        max_angular_vel = 1.5
+        max_angular_vel = 2.84
+        # print("\naction[0]: ", action[0])
+        # print("action[1]: ", action[1])
 
-        linear_vel = action[0]
-        ang_vel = action[1]
+        linear_vel = action[0] * max_linear_vel
+        ang_vel = action[1] * max_angular_vel
 
         linear_vel = max(min(linear_vel, max_linear_vel), -max_linear_vel)
         ang_vel = max(min(ang_vel, max_angular_vel), -max_angular_vel)
@@ -181,7 +195,9 @@ class Env:
         current_ang_z = self.round_value_upto_2(current_ang_z)
 
         state, collision = self.getState(data, current_linear_x, current_ang_z)
-        reward = self.setReward(state, collision, linear_vel, ang_vel)
+        reward = self.setReward(
+            state, collision, linear_vel, ang_vel, steps, num_steps_per_iter
+        )
 
         return np.asarray(state), reward, collision
 
