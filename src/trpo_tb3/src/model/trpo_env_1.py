@@ -31,6 +31,7 @@ from .respawnGoal import Respawn  # no "." causes ImportError
 
 class Env:
     def __init__(self, action_size):
+        # self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.goal_x = 0
         self.goal_y = 0
         self.heading = 0
@@ -71,7 +72,7 @@ class Env:
 
         self.heading = round(heading, 2)
 
-    def getState(self, scan, current_linear_x, current_linear_y, current_angular_z):
+    def getState(self, scan, current_linear_x, current_angular_z):
         scan_range = []
         heading = self.heading
         min_range = 0.14
@@ -107,37 +108,18 @@ class Env:
             + [
                 heading,
                 current_distance,
-                # obstacle_min_range,
-                # obstacle_angle,
                 current_linear_x,
-                current_linear_y,
                 current_angular_z,
             ],
             collision,
-        )
+        )  # 24 + 5 and 1
 
-    def setReward(self, state, collision, action):
-        yaw_reward = []
-        scan_range = state[:-6]
-        current_distance = state[-5]
-        heading = state[-6]
+    def setReward(self, state, collision, linear_vel, ang_vel):
+        scan_range = state[:-4]
+        heading = state[-4]
+        current_distance = state[-3]
 
-        action = action.item()
-        angle = heading + (pi / 8 * (action - 2))
-        if angle > pi:
-            angle = angle - 2 * pi
-        elif angle < -pi:
-            angle = angle + 2 * pi
-        normalize_error = 1 - 2 * np.abs(angle) / pi  # -1 ~ 0
-
-        x = 2 * self.goal_distance - current_distance
-        x = 1.5 * x / self.goal_distance  # 1 ~ ...
-
-        y = min(scan_range)
-        y_ref = 0.14 + 0.3
-        y = 3 * (1 - math.exp(y_ref - y))  # 1-exp(0.3) = -1.35
-
-        reward = min(normalize_error, x, y)
+        reward = self.goal_distance - current_distance
 
         if collision:
             rospy.loginfo("Collision!!")
@@ -156,6 +138,9 @@ class Env:
             self.get_goalbox = False
 
         return reward
+
+    def round_value_upto_2(self, value):
+        return round(value, 2) if value is not None else 0
 
     def step(self, action):
         max_linear_vel = 0.22
@@ -182,28 +167,27 @@ class Env:
             except:
                 pass
 
-        while current_linear_x or current_linear_y or current_ang_z is None:
+        while current_linear_x and current_ang_z is None:
             try:
                 odom = rospy.wait_for_message("odom", Odometry, timeout=5)
                 current_linear_x = odom.twist.twist.linear.x
-                current_linear_y = odom.twist.twist.linear.y
+                # current_linear_y = odom.twist.twist.linear.y
                 current_ang_z = odom.twist.twist.angular.z
             except:
                 pass
 
-        current_linear_x = round(current_linear_x, 2)
-        current_linear_y = round(current_linear_y, 2)
-        current_ang_z = round(current_ang_z, 2)
+        current_linear_x = self.round_value_upto_2(current_linear_x)
+        current_linear_y = self.round_value_upto_2(current_linear_y)
+        current_ang_z = self.round_value_upto_2(current_ang_z)
 
-        state, collision = self.getState(
-            data, current_linear_x, current_linear_y, current_ang_z
-        )
-        reward = self.setReward(state, collision, action)
+        state, collision = self.getState(data, current_linear_x, current_ang_z)
+        reward = self.setReward(state, collision, linear_vel, ang_vel)
 
         return np.asarray(state), reward, collision
 
     def reset(self):
         rospy.wait_for_service("gazebo/reset_simulation")
+
         try:
             self.reset_proxy()
         except rospy.ServiceException as e:
@@ -219,26 +203,24 @@ class Env:
             except:
                 pass
 
-        while current_linear_x or current_linear_y or current_ang_z is None:
+        while current_linear_x and current_ang_z is None:
             try:
                 odom = rospy.wait_for_message("odom", Odometry, timeout=5)
                 current_linear_x = odom.twist.twist.linear.x
-                current_linear_y = odom.twist.twist.linear.y
+                # current_linear_y = odom.twist.twist.linear.y
                 current_ang_z = odom.twist.twist.angular.z
             except:
                 pass
 
-        current_linear_x = round(current_linear_x, 2)
-        current_linear_y = round(current_linear_y, 2)
-        current_ang_z = round(current_ang_z, 2)
+        current_linear_x = self.round_value_upto_2(current_linear_x)
+        # current_linear_y = self.round_value_upto_2(current_linear_y)
+        current_ang_z = self.round_value_upto_2(current_ang_z)
 
         if self.initGoal:
             self.goal_x, self.goal_y = self.respawn_goal.getPosition()
             self.initGoal = False
 
         self.goal_distance = self.getGoalDistace()
-        state, collision = self.getState(
-            data, current_linear_x, current_linear_y, current_ang_z
-        )
+        state, collision = self.getState(data, current_linear_x, current_ang_z)
 
         return np.asarray(state)
