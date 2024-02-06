@@ -34,3 +34,10 @@
 
 2. `catkin_make`와 `catkin build`를 혼동하였을 수 있습니다. ([참고 링크](https://catkin-tools.readthedocs.io/en/latest/migration.html))
 
+
+# TODO
+
+represent results as graph
+
+save trajectory for each episode
+

@@ -24,9 +24,7 @@ class SaveData:
 
     def makeDir(self):
         # self.dirPath = os.path.dirname(os.path.realpath(__file__))
-        dirPath = self.dirPath.replace(
-            "dqn_ttb/src/turtlebot3_dqn", "dqn_ttb/save_model"
-        )
+        dirPath = self.dirPath.replace("trpo_tb3/src/model", "trpo_tb3/save_model")
         dirPath = dirPath + "/stage_{}/{}/{:02d}/{:02d} {}:{}:{}".format(
             self.stage,
             self.year,

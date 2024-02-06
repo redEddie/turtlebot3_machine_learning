@@ -10,21 +10,24 @@ import sys
 sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
 from collections import deque, namedtuple
 
-from std_msgs.msg import Float32MultiArray
-from src.trpo_env_1 import Env
-from src.trpo_model import *
-from src.trpo_memory import ReplayMemory
-from src.trpo_saving import SaveData
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
+from torch.nn import Module
+
+from std_msgs.msg import Float32MultiArray
+from src.model.trpo_env_1 import Env
+from src.model.trpo_model import PolicyNetwork, ValueNetwork, UTILS
+
+# from src.trpo_memory import ReplayMemory
+# from src.trpo_saving import SaveData
+
 
 if torch.cuda.is_available():
     from torch.cuda import FloatTensor
 
-    torch.set_default_tensor_type(torch.cuda.FloatTensor)
+    torch.set_default_dtype(torch.float32)
 else:
     from torch import FloatTensor
 
@@ -34,8 +37,43 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 Transition = namedtuple("Transition", ("state", "action", "reward", "next_state"))
 
 
+def end_point(episode, local_step, truncated, rwd):
+    done = False
+    goal = True if rwd == 1000 else False
+    time_out = True if local_step > end_step else False
+
+    # 종료조건 3가지(1. 목표지점 도달, 2. 충돌, 3. 시간초과)
+    if goal:
+        rospy.loginfo("[Learning] Goal Reached. @step %d", local_step)
+        done = True
+
+        # scores.append(score)
+        # episodes.append(e)
+        # m, s = divmod(int(time.time() - start_time), 60)
+        # h, m = divmod(m, 60)
+
+    if truncated:
+        rospy.loginfo("[Learning] Collision. @step %d", local_step)
+        done = True
+
+        # scores.append(score)
+        # episodes.append(e)
+        # m, s = divmod(int(time.time() - start_time), 60)
+        # h, m = divmod(m, 60)
+
+        # param_keys = ["epsilon"]
+        # param_values = [agent.epsilon]
+        # param_dictionary = dict(zip(param_keys, param_values))
+
+    if time_out:
+        rospy.loginfo("[Learning] Time out. @step %d", local_step)
+        done = True
+
+    return done
+
+
 class TRPO(Module):
-    def __init__(self, state_dim, action_dim, discrete=False) -> None:
+    def __init__(self, state_dim, action_dim, discrete=False, stage_number=1) -> None:
         super().__init__()
 
         self.state_dim = state_dim
@@ -46,6 +84,9 @@ class TRPO(Module):
         self.pi = PolicyNetwork(self.state_dim, self.action_dim, self.discrete)
         if self.use_baseline:
             self.v = ValueNetwork(self.state_dim)
+
+        self.utils = UTILS()
+        # self.save = SaveData(stage_number)
 
     def get_networks(self):
         if self.use_baseline:
@@ -63,7 +104,7 @@ class TRPO(Module):
 
         return action
 
-    def train(self, env, render=False):
+    def train(self, env):
         lr = 1e-3
         num_iters = 200  # Episode
         num_steps_per_iter = 2000  # max_iter per episode
@@ -103,9 +144,7 @@ class TRPO(Module):
                     obs.append(ob)
                     acts.append(act)
 
-                    if render:
-                        env.render()
-                    observation, rwd, truncated = env.step(act)
+                    ob, rwd, truncated = env.step(act)
 
                     ep_rwds.append(rwd)
                     ep_disc_rwds.append(rwd * (discount**t))
@@ -118,6 +157,8 @@ class TRPO(Module):
                         if t >= horizon:
                             done = True
                             break
+
+                    end_point(i, t, truncated, rwd)
 
                 ep_disc = FloatTensor(ep_disc)
 
@@ -141,7 +182,7 @@ class TRPO(Module):
             if normalize_return:
                 rets = (rets - rets.mean()) / rets.std()
 
-            if use_baseline:
+            if use_baseline:  # Policy Based Optimization
                 self.v.eval()
                 delta = (rets - self.v(obs).squeeze()).detach()
 
@@ -153,7 +194,7 @@ class TRPO(Module):
                 opt_v.step()
 
             self.pi.train()
-            old_params = UTILS.get_flat_params(self.pi).detach()
+            old_params = self.utils.get_flat_params(self.pi).detach()
             old_distb = self.pi(obs)
 
             def L():
@@ -199,34 +240,36 @@ class TRPO(Module):
                         - torch.log(old_cov).sum(-1)
                     ).mean()
 
-            grad_kld_old_param = UTILS.get_flat_grads(kld(), self.pi)
+            grad_kld_old_param = self.utils.get_flat_grads(kld(), self.pi)
 
             def Hv(v):
-                hessian = UTILS.get_flat_grads(
+                hessian = self.utils.get_flat_grads(
                     torch.dot(grad_kld_old_param, v), self.pi
                 ).detach()
 
                 return hessian + cg_damping * v
 
-            g = UTILS.get_flat_grads(L(), self.pi).detach()
+            g = self.utils.get_flat_grads(L(), self.pi).detach()
 
-            s = UTILS.conjugate_gradient(Hv, g).detach()
+            s = self.utils.conjugate_gradient(Hv, g).detach()
             Hs = Hv(s).detach()
 
-            new_params = UTILS.rescale_and_linesearch(
+            new_params = self.utils.rescale_and_linesearch(
                 g, s, Hs, max_kl, L, kld, old_params, self.pi
             )
 
-            UTILS.set_params(self.pi, new_params)
+            self.utils.set_params(self.pi, new_params)
 
         return rwd_iter_means
 
 
 if __name__ == "__main__":
+    stage_number = 1
     # (ROS print) torch.cuda.is_available()
     rospy.loginfo("%s", torch.cuda.is_available())
     # (ROS node init) trpo_stage_1
-    rospy.init_node("trpo_stage_1")
+    node_name = "trpo_stage_{stage_number}"
+    rospy.init_node(node_name)
     # (ROS pub) result
     pub_result = rospy.Publisher("result", Float32MultiArray, queue_size=5)
     result = Float32MultiArray()
@@ -235,171 +278,94 @@ if __name__ == "__main__":
     get_action = Float32MultiArray()
 
     # (Python) agent init
-    state_size = 30
-    action_size = 5
-    agent = TRPO(state_size, action_size)
+    state_size = 24 + 7
+    action_size = 2
+    agent = TRPO(state_size, action_size, stage_number=1)
     scores, episodes = [], []
     global_step = 0
     start_time = time.time()
-    agent.loss_item = 0
     score = 0
     goal = False
     end_step = 150  ## 150 => 30s
     is_random = 0
 
-    ## 모델을 불러온다.
-    if agent.load_episode != 0:
-        # agent.loadModel(agent.load_episode, agent.load_file)
-        (
-            agent.load_episode,
-            agent.policy_net,
-            agent.optimizer,
-            score,
-        ) = agent.save_data.loadModel(
-            agent.load_episode,
-            agent.load_file,
-            agent.policy_net,
-            agent.optimizer,
-            agent.evaluation,
-        )
-
-    if agent.load_memory:
-        agent.memory.load(agent.memory_file)
-
+    ## 학습을 시작한다.
+    ####### TODO
+    # ## 모델을 불러온다.
+    # if agent.load_episode != 0:
+    #     # agent.loadModel(agent.load_episode, agent.load_file)
+    #     (
+    #         agent.load_episode,
+    #         agent.policy_net,
+    #         agent.optimizer,
+    #         score,
+    #     ) = agent.save_data.loadModel(
+    #         agent.load_episode,
+    #         agent.load_file,
+    #         agent.policy_net,
+    #         agent.optimizer,
+    #         agent.evaluation,
+    #     )
+    # if agent.load_memory:
+    #     agent.memory.load(agent.memory_file)
     ## 저장할 폴더를 만든다.
-    agent.save_data.makeDir()
+    # agent.save_data.makeDir()
 
     ## 총 훈련 횟수를 정한다.
-    agent.EPISODE = agent.load_episode + agent.EPISODE
+    # agent.EPISODE = agent.load_episode + agent.EPISODE
+    # # agent.memory.push(state, action, reward, next_state)
+    # # 저장할 메모리 준비
+    # # if not global_step % 5000:
+    #     # agent.memory.save(agent.save_data.memorySavedAt(), e)
 
-    ## main loop
-    for e in range(agent.load_episode + 1, agent.EPISODE + 1):
-        time_out = False
-        truncated = False
-        goal = False
+    #     # 성능을 txt에 저장
+    #     agent.save_data.recordPerformance(
+    #         e,
+    #         score,
+    #         len(agent.memory),
+    #         agent.epsilon,
+    #         agent.loss_item,
+    #         h,
+    #         m,
+    #         s,
+    #         start_time,
+    #         local_step,
+    #     )
+    #     # 모델을 저장
+    #     if (e % 100) == 0:
+    #         agent.save_data.saveModel(
+    #             model=agent.policy_net,
+    #             episode=e,
+    #             optimizer=agent.optimizer,
+    #             score=score,
+    #         )
+    ### TODO
 
-        state = agent.env.reset()
-        state = torch.tensor(state, dtype=torch.float32).unsqueeze(0).to(device)
-
-        for local_step in range(agent.episode_step):
-            action = agent.getAction(state, global_step)
-            observation, reward, truncated = agent.env.step(action)
-            reward = torch.tensor([reward], device=device)
-
-            rospy.loginfo(
-                "[Learning] step to end e%d: %d(%d), memory: %d, epsilon thres: %.2f, is_random: %s, action: %d, reward: %.3f, loss: %f",
-                e,
-                end_step - local_step,
-                global_step,
-                len(agent.memory),
-                agent.epsilon_threshold,
-                str(is_random),
-                action,
-                reward,
-                agent.loss_item,
-            )
-
-            if reward >= 100:  ## Goal
-                goal = True
-            if local_step > end_step:  ## truncated for timeout.
-                time_out = True
-                truncated = True
-
-            if goal or truncated:
-                next_state = None
-            else:
-                next_state = torch.tensor(
-                    observation, dtype=torch.float32, device=device
-                ).unsqueeze(0)
-            agent.memory.push(state, action, reward, next_state)
-            state = next_state
-            ## 학습
-            agent.trainModel(len(agent.memory), agent.train_start)
-            target_net_state_dict = agent.target_net.state_dict()
-            policy_net_state_dict = agent.policy_net.state_dict()
-            for key in policy_net_state_dict:
-                target_net_state_dict[key] = policy_net_state_dict[
-                    key
-                ] * agent.TAU + target_net_state_dict[key] * (1 - agent.TAU)
-            agent.target_net.load_state_dict(target_net_state_dict)
-
-            # score += reward
-            # get_action.data = [action, score, reward]
-            # pub_get_action.publish(get_action)
-
-            # 저장할 메모리 준비
-            if not global_step % 5000:
-                agent.memory.save(agent.save_data.memorySavedAt(), e)
-
-            global_step += 1
-
-            ## 종료조건 3가지(1. 목표지점 도달, 2. 충돌, 3. 시간초과)
-            if goal:
-                rospy.loginfo("[Learning] Goal Reached. @step %d", local_step)
-
-                scores.append(score)
-                episodes.append(e)
-                m, s = divmod(int(time.time() - start_time), 60)
-                h, m = divmod(m, 60)
-                break
-
-            if truncated:
-                if time_out:
-                    rospy.loginfo("[Learning] Time out. @step %d", local_step)
-                else:
-                    rospy.loginfo("[Learning] Collision. @step %d", local_step)
-
-                scores.append(score)
-                episodes.append(e)
-                m, s = divmod(int(time.time() - start_time), 60)
-                h, m = divmod(m, 60)
-
-                param_keys = ["epsilon"]
-                param_values = [agent.epsilon]
-                param_dictionary = dict(zip(param_keys, param_values))
-                break
-
-        # 성능을 txt에 저장
-        agent.save_data.recordPerformance(
-            e,
-            score,
-            len(agent.memory),
-            agent.epsilon,
-            agent.loss_item,
-            h,
-            m,
-            s,
-            start_time,
-            local_step,
-        )
-        # 모델을 저장
-        if (e % 100) == 0:
-            agent.save_data.saveModel(
-                model=agent.policy_net,
-                episode=e,
-                optimizer=agent.optimizer,
-                score=score,
-            )
+    env = Env(action_size)
+    rwd_iter_means = agent.train(env)
 
     rospy.loginfo("[Notice] Finish! Press any key to exit.")
-    rospy.loginfo("[Notice] Final score: %d, loss: %d", score, agent.loss_item)
+    rospy.loginfo("[Notice] Mean of rewards: %f", rwd_iter_means)
+    # rospy.loginfo("[Notice] Final score: %d, loss: %d", score, agent.loss_item)
 
     m, s = divmod(int(time.time() - start_time), 60)
     h, m = divmod(m, 60)
-    agent.save_data.recordPerformance(
-        e,
-        score,
-        len(agent.memory),
-        agent.epsilon,
-        agent.loss_item,
-        h,
-        m,
-        s,
-        start_time,
-        local_step,
-    )
-    agent.save_data.saveModel(
-        model=agent.policy_net, episode=e, optimizer=agent.optimizer, score=score
-    )
-    agent.memory.save(agent.save_data.memorySavedAt(), e)
+    rospy.loginfo("[Notice] Time: %d h %d m %d s", h, m, s)
+
+    # agent.save_data.recordPerformance(
+    #     e,
+    #     score,
+    #     len(agent.memory),
+    #     agent.epsilon,
+    #     agent.loss_item,
+    #     h,
+    #     m,
+    #     s,
+    #     start_time,
+    #     local_step,
+    # )
+    # agent.save_data.saveModel(
+    #     model=agent.policy_net, episode=e, optimizer=agent.optimizer, score=score
+    # )
+    # agent.memory.save(agent.save_data.memorySavedAt(), e)
     rospy.spin()

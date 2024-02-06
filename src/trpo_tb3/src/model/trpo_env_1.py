@@ -26,7 +26,7 @@ from sensor_msgs.msg import LaserScan
 from nav_msgs.msg import Odometry
 from std_srvs.srv import Empty
 from tf.transformations import euler_from_quaternion, quaternion_from_euler
-from respawnGoal import Respawn
+from .respawnGoal import Respawn  # no "." causes ImportError
 
 
 class Env:
@@ -71,13 +71,13 @@ class Env:
 
         self.heading = round(heading, 2)
 
-    def getState(self, scan, current_angular_z):
+    def getState(self, scan, current_linear_x, current_linear_y, current_angular_z):
         scan_range = []
         heading = self.heading
         min_range = 0.14
         collision = False
 
-        linear_x = 0.15
+        # current_linear_x = 0.15
 
         for i in range(len(scan.ranges)):
             if scan.ranges[i] == float("Inf"):
@@ -87,8 +87,8 @@ class Env:
             else:
                 scan_range.append(scan.ranges[i])
 
-        obstacle_min_range = round(min(scan_range), 2)
-        obstacle_angle = np.argmin(scan_range)
+        # obstacle_min_range = round(min(scan_range), 2)
+        # obstacle_angle = np.argmin(scan_range)
         if min_range > min(scan_range) > 0:
             done = True
 
@@ -107,15 +107,16 @@ class Env:
             + [
                 heading,
                 current_distance,
-                obstacle_min_range,
-                obstacle_angle,
-                linear_x,
+                # obstacle_min_range,
+                # obstacle_angle,
+                current_linear_x,
+                current_linear_y,
                 current_angular_z,
             ],
             collision,
         )
 
-    def setReward(self, state, done, action):
+    def setReward(self, state, collision, action):
         yaw_reward = []
         scan_range = state[:-6]
         current_distance = state[-5]
@@ -138,7 +139,7 @@ class Env:
 
         reward = min(normalize_error, x, y)
 
-        if done:
+        if collision:
             rospy.loginfo("Collision!!")
             reward = -500
             self.pub_cmd_vel.publish(Twist())
@@ -157,29 +158,46 @@ class Env:
         return reward
 
     def step(self, action):
+        max_linear_vel = 0.22
         max_angular_vel = 1.5
-        ang_vel = ((self.action_size - 1) / 2 - action) * max_angular_vel * 0.5
+
+        linear_vel = action[0]
+        ang_vel = action[1]
+
+        linear_vel = max(min(linear_vel, max_linear_vel), -max_linear_vel)
+        ang_vel = max(min(ang_vel, max_angular_vel), -max_angular_vel)
 
         vel_cmd = Twist()
-        vel_cmd.linear.x = 0.15
+        vel_cmd.linear.x = linear_vel
         vel_cmd.angular.z = ang_vel
         self.pub_cmd_vel.publish(vel_cmd)
 
         data = None
+        current_linear_x = None
+        current_linear_y = None
+        current_ang_z = None
         while data is None:
             try:
                 data = rospy.wait_for_message("scan", LaserScan, timeout=5)
             except:
                 pass
 
-        while current_ang_z is None:
+        while current_linear_x or current_linear_y or current_ang_z is None:
             try:
-                current_ang_z = rospy.wait_for_message("odom", Odometry, timeout=5)
-                current_ang_z = current_ang_z.twist.twist.angular.z
+                odom = rospy.wait_for_message("odom", Odometry, timeout=5)
+                current_linear_x = odom.twist.twist.linear.x
+                current_linear_y = odom.twist.twist.linear.y
+                current_ang_z = odom.twist.twist.angular.z
             except:
                 pass
 
-        state, collision = self.getState(data, current_ang_z)
+        current_linear_x = round(current_linear_x, 2)
+        current_linear_y = round(current_linear_y, 2)
+        current_ang_z = round(current_ang_z, 2)
+
+        state, collision = self.getState(
+            data, current_linear_x, current_linear_y, current_ang_z
+        )
         reward = self.setReward(state, collision, action)
 
         return np.asarray(state), reward, collision
@@ -192,25 +210,35 @@ class Env:
             print("gazebo/reset_simulation service call failed")
 
         data = None
+        current_linear_x = None
+        current_linear_y = None
+        current_ang_z = None
         while data is None:
             try:
                 data = rospy.wait_for_message("scan", LaserScan, timeout=5)
             except:
                 pass
 
-        current_ang_z = None
-        while current_ang_z is None:
+        while current_linear_x or current_linear_y or current_ang_z is None:
             try:
-                current_ang_z = rospy.wait_for_message("odom", Odometry, timeout=5)
-                current_ang_z = current_ang_z.twist.twist.angular.z
+                odom = rospy.wait_for_message("odom", Odometry, timeout=5)
+                current_linear_x = odom.twist.twist.linear.x
+                current_linear_y = odom.twist.twist.linear.y
+                current_ang_z = odom.twist.twist.angular.z
             except:
                 pass
+
+        current_linear_x = round(current_linear_x, 2)
+        current_linear_y = round(current_linear_y, 2)
+        current_ang_z = round(current_ang_z, 2)
 
         if self.initGoal:
             self.goal_x, self.goal_y = self.respawn_goal.getPosition()
             self.initGoal = False
 
         self.goal_distance = self.getGoalDistace()
-        state, collision = self.getState(data)
+        state, collision = self.getState(
+            data, current_linear_x, current_linear_y, current_ang_z
+        )
 
         return np.asarray(state)
