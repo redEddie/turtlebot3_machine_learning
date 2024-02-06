@@ -91,8 +91,8 @@ class TRPO(Module):
 
     def train(self):
         lr = 1e-3
-        num_iters = 2  # Episode
-        num_steps_per_iter = 150  # max_iter per episode
+        num_iters = 5000  # Episode
+        num_steps_per_iter = 128  # max_iter per episode
         horizon = None
         discount = 0.99
         max_kl = 0.01
@@ -113,7 +113,9 @@ class TRPO(Module):
             disc = []
 
             steps = 0
-            while steps < num_steps_per_iter:
+            while (
+                steps < num_steps_per_iter
+            ):  # step does not go 0 when episode ends early
                 ep_rwds = []
                 ep_disc_rwds = []
                 ep_disc = []
