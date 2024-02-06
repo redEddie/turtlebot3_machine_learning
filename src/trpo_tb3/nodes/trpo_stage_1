@@ -374,7 +374,7 @@ def main():
     ### TO DO
     # rospy.loginfo("[Learning] Start!!")
 
-    print("[Learning] Finish! Press any key to exit.")
+    print("[Learning] Finish!")
     print("[Learning] Mean of rewards: ")
     print(rwd_iter_means)
     # rospy.loginfo("[Notice] Final score: %d, loss: %d", score, agent.loss_item)
