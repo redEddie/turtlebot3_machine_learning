@@ -92,7 +92,7 @@ class TRPO(Module):
     def train(self):
         lr = 1e-3
         num_iters = 50  # Episode (2000 per half day)
-        num_steps_per_iter = 128  # max_iter per episode
+        num_steps_per_iter = 256  # max_iter per episode
         horizon = None
         discount = 0.99
         max_kl = 0.01
@@ -383,7 +383,7 @@ def main():
 
     m, s = divmod(int(time.time() - tic), 60)
     h, m = divmod(m, 60)
-    print("[Learning] Time consumed: %d h %d m %d s", h, m, s)
+    print("[Learning] Time consumed: {} h {} m {} s".format(h, m, s))
 
     # agent.save_data.recordPerformance(
     #     e,
