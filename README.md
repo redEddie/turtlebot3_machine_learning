@@ -11,7 +11,7 @@
 
 추가적으로 기본 빌더(`catkin_make`)를 사용하지 않고  [`catkin_tools`](https://catkin-tools.readthedocs.io/en/latest/verbs/catkin_build.html)를 사용하였으며, 아래 설명에서 빌드 과정은 이를 기반으로 함을 밝힙니다.
 
-아래에 코드 실행 순서를 작성하였습니다. 기본적으로 `Ubuntu base python`을 이용하며 필요한 파이썬 라이브러리는 셀프로 설치해주세요.
+아래에 코드 실행 순서를 작성하였습니다. 기본적으로 `Ubuntu base python (20.04 python=3.8)`을 이용하며 필요한 파이썬 라이브러리는 셀프로 설치해주세요.
    ```
    torch torchvision torchaudio tqdm matplotlib seaborn numpy 
    ```
