@@ -45,6 +45,7 @@ class Env:
         self.unpause_proxy = rospy.ServiceProxy("gazebo/unpause_physics", Empty)
         self.pause_proxy = rospy.ServiceProxy("gazebo/pause_physics", Empty)
         self.respawn_goal = Respawn()
+        self.previous_distance = 0
 
     def getGoalDistace(self):
         goal_distance = round(
@@ -57,7 +58,7 @@ class Env:
         self.position = odom.pose.pose.position
         orientation = odom.pose.pose.orientation
         orientation_list = [orientation.x, orientation.y, orientation.z, orientation.w]
-        _, _, yaw = euler_from_quaternion(orientation_list)
+        _, _, yaw = euler_from_quaternion(orientation_list)  # roll, pitch, yaw
 
         goal_angle = math.atan2(
             self.goal_y - self.position.y, self.goal_x - self.position.x
@@ -121,9 +122,16 @@ class Env:
         heading = state[-4]
         current_distance = state[-3]
 
-        min_scan_range = min(scan_range)
+        distance = self.goal_distance - current_distance
+        normalized_distance = distance / self.goal_distance
 
-        reward = round(8 * (self.goal_distance - current_distance) * min_scan_range, 2)
+        delta_distance = self.previous_distance - current_distance
+        self.previous_distance = current_distance
+
+        reward = max(0.1, abs(normalized_distance)) * delta_distance * 100
+        reward = round(reward, 2)
+
+        # print("\n reward: ", round(reward, 2))
 
         if collision:
             print("[Learning] Collision!!")

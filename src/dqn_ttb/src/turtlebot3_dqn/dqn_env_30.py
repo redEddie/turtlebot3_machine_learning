@@ -107,21 +107,6 @@ class Env:
         current_distance = state[-5]  # distance from goal
         heading = state[-6]  # heading error
 
-        # for i in range(5):      # i 가 action의 인덱스와 같다.
-        #     # angle = -pi / 4 + heading + (pi / 8 * i) + pi / 2         # 이전의 angle candidate이다. 상당히 이상하다.
-        #     # normalize_error = angle%(2*pi) / (2*pi)
-        #     # tr = 1 - 4 * math.fabs(0.5 - math.modf(0.25 + normalized_error)[0])
-
-        #     angle = heading + (pi/8 * (i-2))                            # heading error에서 취할 수 있는 action에 따른 각도
-        #     if angle > pi:
-        #         angle = angle - 2*pi
-        #     elif angle < -pi:
-        #         angle = angle + 2*pi
-        #     normalize_error = angle / pi
-        #     tr = 5 * normalize_error
-
-        #     yaw_reward.append(tr)
-
         action = action.item()
         angle = heading + (pi / 8 * (action - 2))
         if angle > pi:
@@ -132,16 +117,12 @@ class Env:
 
         x = 2 * self.goal_distance - current_distance
         x = 1.5 * x / self.goal_distance  # 1 ~ ...
-        # x = 1*tanh(x)
 
         y = min(scan_range)
         y_ref = 0.14 + 0.3
         y = 3 * (1 - math.exp(y_ref - y))  # 1-exp(0.3) = -1.35
 
-        # reward = (round(yaw_reward[action], 2)) * (x)
-        # reward = min(10 * round(normalize_error, 2), x, y)
         reward = min(normalize_error, x, y)
-        ## 감상문 : 3가지 tasks에 대해 reward function을 작성하는 것은 어렵다. inverse reinforcement learning을 사용해야 할 것 같다.
 
         if collision:
             reward = -500

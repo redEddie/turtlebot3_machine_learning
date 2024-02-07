@@ -91,7 +91,7 @@ class TRPO(Module):
 
     def train(self):
         lr = 1e-3
-        num_iters = 5000  # Episode
+        num_iters = 50  # Episode (2000 per half day)
         num_steps_per_iter = 128  # max_iter per episode
         horizon = None
         discount = 0.99
@@ -146,7 +146,7 @@ class TRPO(Module):
                             done = True
                             break
 
-                    print("\nsteps: ", steps, "reward: ", rwd)
+                    print("\nnum_iters", i, "steps: ", steps, "reward: ", rwd)
 
                 ep_disc = torch.tensor(ep_disc, dtype=torch.float32)
 

@@ -19,6 +19,7 @@
 # Algorithms
 
 1. [Deep Q-Learning](./src/dqn_ttb/README.md)
+2. [Trust Region Policy Optimization](./src/trpo_tb3/README.md)
 
 
 # Possible Errors
