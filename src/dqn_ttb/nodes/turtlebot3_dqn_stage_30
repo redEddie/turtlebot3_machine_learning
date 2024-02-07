@@ -292,7 +292,7 @@ if __name__ == "__main__":
         # 모델을 저장
         if (e % 100) == 0:
             agent.save_data.saveModel(
-                model=agent.policy_net,
+                model=agent.target_net,
                 episode=e,
                 optimizer=agent.optimizer,
                 score=score,
