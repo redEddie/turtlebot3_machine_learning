@@ -3,7 +3,31 @@
 
 TRPO는 대표적은 Policy Based Learning 알고리즘으로 앞선 DQN처럼 Q-value를 maximize하는 것이 아닌 `값의 미분치`를 이용하므로 DQN보다 더 빠른 학습시간을 기대할 수 있습니다.
 
-하지만 저의 코드에서 DQN은 몇 번의 반복으로도 쉽게 학습하는 것으로 보이는데, 이는 단순히 DQN의 action space를 discrete하게 설정하여 알고리즘이 탐색해야할 경우의 수를 많이 줄였기 때문입니다.
+하지만 코드에서 DQN은 몇 번의 반복으로도 쉽게 학습하는 것으로 보이는데, 이는 단순히 DQN의 action space를 discrete하게 설정하여 알고리즘이 탐색해야할 경우의 수를 많이 줄였기 때문입니다.
+
+TRPO는 continuous state space, continuous action spcae 에서도 좋은 학습성능을 보이기 때문에 DQN보다 가혹한 환경에서 학습을 하고 이에 따라 DQN 보다는 성능이 떨어져 보일 수 있으나, 학습환경이 달라 비교할 수 없다는 점을 알아주시면 좋겠습니다.
+
+대신 이로써 discrete action 과 continuous action의 차이를 느낄 수 있을 것입니다.
+
+
+### Youtube
+
+Upload when model trained
+
+### Simulation
+
+Detailed instruciton followes [Deep Q-Learning](). Below is to launch node and run algorithm.
+
+1. Gazebo 환경에 `월드`와 `머신`을 로드해주세요.
+
+   ```
+   roslaunch turtlebot3_gazebo turtlebot3_dqn_stage_2.launch
+   ```
+
+1. 알고리즘을 동작시켜주세요.
+   ```
+   roslaunch dqn_ttb turtlebot3_dqn_stage_30.launch
+   ```
 
 
 ### About "Reinforcement Learning" and "Reward Function"
@@ -30,26 +54,6 @@ TRPO는 대표적은 Policy Based Learning 알고리즘으로 앞선 DQN처럼 Q
         self.previous_distance = current_distance
 
         reward = max(0.1, abs(normalized_distance)) * delta_distance * 100`
-
-
-### Youtube
-
-Upload when model trained
-
-### Simulation
-
-Detailed instruciton followes [Deep Q-Learning](). Below is to launch node and run algorithm.
-
-1. Gazebo 환경에 `월드`와 `머신`을 로드해주세요.
-
-   ```
-   roslaunch turtlebot3_gazebo turtlebot3_dqn_stage_2.launch
-   ```
-
-1. 알고리즘을 동작시켜주세요.
-   ```
-   roslaunch dqn_ttb turtlebot3_dqn_stage_30.launch
-   ```
 
 
 ### TODO
