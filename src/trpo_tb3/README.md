@@ -1,28 +1,30 @@
 # 2. Trust Region Policy Optimization
 코드는 로보티즈의 [머신러닝 튜토리얼](https://emanual.robotis.com/docs/en/platform/turtlebot3/machine_learning/#machine-learning) 코드와 [RL Collection](https://github.com/hcnoh/rl-collection-pytorch)을 기반으로 만들어졌습니다.
 
-with continuous state and action spaces
+TRPO는 대표적은 Policy Based Learning 알고리즘으로 앞선 DQN처럼 Q-value를 maximize하는 것이 아닌 `값의 미분치`를 이용하므로 DQN보다 더 빠른 학습시간을 기대할 수 있습니다.
+
+하지만 저의 코드에서 DQN은 몇 번의 반복으로도 쉽게 학습하는 것으로 보이는데, 이는 단순히 DQN의 action space를 discrete하게 설정하여 알고리즘이 탐색해야할 경우의 수를 많이 줄였기 때문입니다.
 
 
 ### About "Reinforcement Learning" and "Reward Function"
 
-All of the Reinforcement Learning requires a good reward function.
+모든 강화학습 알고리즘은 reward function 이라는 개념을 필수적으로 요구합니다. 이는 env에 요소 중 하나로 알고리즘을 따라 행동하는 agent의 행동에 대한 보상을 반환합니다. 이런 반환된 보상을 바탕으로 알고리즘이 학습을 하므로 목표에 맞춰 엄밀하게 짜여진 보상함수는 좋은 성능의 뒷받침이 됩니다.
 
-If reward is not given appropriately, [this](https://youtu.be/R5-SdIQ1RFQ) will happen. I've trained model for half a day but it dose not work well.
+상황에 적당하지 않은 보상은 [다음 영상](https://youtu.be/R5-SdIQ1RFQ)과 같이 약 반나절을 학습에도 불구하고 어설픈 동작을 야기합니다.
 
-The reward function was 
+위의 영상에서 사용된 보상함수는 다음과 같습니다.
 
     `reward = round(8 * (self.goal_distance - current_distance) * min_scan_range, 2)`
 
-, which calculates distance between robot and goal point and distance between robot and closest obstacle in map.
+목표위치와의 거리를 계산하고 근처 장애물과의 거리를 고려하여 값을 반환하는 함수입니다.
 
-Poor reward function may gives positive reward even if the robot rotates in one place(where local minma is).
+영상을 자세히 보신다면 제자리에서 도는 행위로 소소한 보상을 모으며 local minima에 빠진 모습을 볼 수 있습니다.
 
-Setting time out might solve the problem, but not enough to solve(mine like above).
+정해진 시간 내에 목표위치에 도달하지 않는 상황에 패널티를 주어 해결할 수 있지만, 위 영상을 보니 충분히 해결하지 못 한 것 같습니다.
 
-Taking delta of distance can be solution, since it incentivizes the robot to move towards the goal.
+따라서 조금 더 엄밀한 보상함수를 설계한다면 더 나은 성능을 기대할 수 있게 되고, 따라서 목표위치까지의 거리에 대한 미분치를 이용하여 로봇이 목표위치로 향해 움직일 때 그리고 목표위치를 향해 빠르게 움직일 때 더 큰 보상을 받도록 할 수 있습니다.
 
-The changed reward function is
+수정된 보상함수는 다음과 같습니다.
 
     `delta_distance = self.previous_distance - current_distance
         self.previous_distance = current_distance
