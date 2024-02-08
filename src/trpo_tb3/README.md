@@ -44,11 +44,11 @@ Detailed instruciton followes [Deep Q-Learning](). Below is to launch node and r
 
 영상을 자세히 보신다면 제자리에서 도는 행위로 소소한 보상을 모으며 local minima에 빠진 모습을 볼 수 있습니다.
 
-정해진 시간 내에 목표위치에 도달하지 않는 상황에 패널티를 주어 해결할 수 있지만, 위 영상을 보니 충분히 해결하지 못 한 것 같습니다.
+<del>정해진 시간 내에 목표위치에 도달하지 않는 상황에 패널티를 주어 해결할 수 있지만, 위 영상을 보니 충분히 해결하지 못 한 것 같습니다.
 
 따라서 조금 더 엄밀한 보상함수를 설계한다면 더 나은 성능을 기대할 수 있게 되고, 따라서 목표위치까지의 거리에 대한 미분치를 이용하여 로봇이 목표위치로 향해 움직일 때 그리고 목표위치를 향해 빠르게 움직일 때 더 큰 보상을 받도록 할 수 있습니다.
 
-수정된 보상함수는 다음과 같습니다.
+수정된 보상함수는 다음과 같습니다. <del>
 
     `delta_distance = self.previous_distance - current_distance
         self.previous_distance = current_distance
