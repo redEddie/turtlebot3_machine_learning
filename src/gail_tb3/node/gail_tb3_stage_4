@@ -1,0 +1,324 @@
+#!/usr/bin/python3
+
+import os
+import json
+import numpy as np
+import random
+import time
+import sys
+
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import torch.optim as optim
+from collections import deque, namedtuple
+import pickle
+
+sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
+import rospy
+from std_msgs.msg import Float32MultiArray
+
+from script.dqn.dqn_env import Env
+from script.dqn.dqn_mem import ReplayMemory
+
+
+class DQN(nn.Module):
+    # in = 30, out = 5
+    def __init__(self, state_size, action_size):
+        super().__init__()
+
+        self.in_layer = nn.Linear(state_size, 64)
+        self.h_layer = nn.Linear(64, 64)
+        self.out_layer = nn.Linear(64, action_size)
+
+        self.act = nn.ReLU()
+
+    def forward(self, x):
+        h1 = self.act(self.in_layer(x))
+        h2 = self.act(self.h_layer(h1))
+        output = self.out_layer(h2)
+        return output
+
+
+class Checkpoint:
+    def __init__(self):
+        self.folder = os.path.dirname(os.path.realpath(__file__))
+        self.folder = self.folder.replace("gail_tb3/node", "gail_tb3/ckpt")
+
+
+class Expert:
+    def __init__(self, state_size, action_size):
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        # self.pub_result = rospy.Publisher("result", Float32MultiArray, queue_size=5)
+        # self.result = Float32MultiArray()
+
+        self.load_dqn = True
+        self.load_file = "stage_30-10_policy_net_1000"
+        self.memory_file = "memory1000"
+
+        self.evaluation = True
+        self.target_ckpt = "target_net.ckpt"
+        self.target_mem = "memory1030.pkl"
+
+        self.epoches = 30  ## 500 => 1.5h, 8000 => 1d
+        self.steps = 6000  ## 40e => 5000
+        self.GAMMA = 0.99  # discount factor
+        self.lr = 1e-4
+        self.epsilon = 1.0
+        self.epsilon_decay = 2000
+        self.epsilon_min = 0.01
+        self.epsilon_threshold = 1.0
+        self.batch_size = 64  # can be modified as you want. upon your vram.
+        self.train_start = 64
+        self.TAU = 0.8
+
+        self.env = Env(action_size)
+        self.state_size = state_size
+        self.action_size = action_size
+        self.policy_net = DQN(state_size, action_size).to(self.device)
+        self.target_net = DQN(state_size, action_size).to(self.device)
+        self.optimizer = optim.AdamW(
+            self.policy_net.parameters(), lr=self.lr, amsgrad=True
+        )
+
+        self.transition = namedtuple(
+            "Transition", ("state", "action", "reward", "next_state")
+        )
+        self.memory = ReplayMemory(5000)
+
+        self.is_random = False
+
+    def getAction(self, state, global_step, load_episode):
+        if self.evaluation == False:
+            self.epsilon_threshold = self.epsilon_min + (
+                self.epsilon - self.epsilon_min
+            ) * np.exp(-1.0 * (global_step + load_episode) / self.epsilon_decay)
+
+            if np.random.rand() > self.epsilon_threshold:
+                self.is_random = False
+                self.policy_net.eval()
+                with torch.no_grad():
+                    return self.policy_net(state).max(1)[1].view(1, 1)
+
+            else:
+                self.is_random = True
+                return torch.tensor(
+                    [[random.randrange(self.action_size)]],
+                    device=self.device,
+                    dtype=torch.long,
+                )
+
+        if self.evaluation == True:
+            self.is_random = False
+            self.target_net.eval()
+            return self.target_net(state).max(1)[1].view(1, 1)
+
+    def trainModel(self, length_memory, start_length):
+        # no train
+        if length_memory < start_length:
+            return
+
+        # train
+        transitions = self.memory.sample(self.batch_size)
+        mini_batch = self.transition(*zip(*transitions))
+
+        state_batch = torch.cat([s.to(self.device) for s in mini_batch.state], dim=0)
+        action_batch = torch.cat([a.to(self.device) for a in mini_batch.action], dim=0)
+        reward_batch = torch.cat([r.to(self.device) for r in mini_batch.reward], dim=0)
+
+        non_final_mask = torch.tensor(
+            tuple(map(lambda s: s is not None, mini_batch.next_state)),
+            dtype=torch.bool,
+        ).to(self.device)
+        non_final_next_states = torch.cat(
+            [s.to(self.device) for s in mini_batch.next_state if s is not None]
+        ).to(self.device)
+
+        self.policy_net.train()
+        action_value = (
+            self.policy_net(state_batch).gather(1, action_batch).to(self.device)
+        )
+        # [64, 5] -> [64, 1] action 배치가 인덱스이므로 5개중에서 선택한걸 고름.
+
+        self.target_net.eval()
+        next_state_value = torch.zeros(self.batch_size, device=self.device)  # [64]
+        next_state_value[non_final_mask] = self.target_net(non_final_next_states).max(
+            1
+        )[0]
+        # max로 최대의 보상 [64, 5] -> [64]
+
+        expected_q_value = (next_state_value * self.GAMMA) + reward_batch
+
+        criterian = nn.SmoothL1Loss()
+        loss = criterian(input=action_value, target=expected_q_value.unsqueeze(1))
+        # unsqeeze -> [64, 1]
+
+        self.optimizer.zero_grad()  # 기울기 초기화
+        loss.backward()  # 역전파 계산
+        # torch.nn.utils.clip_grad_value_(self.policy_net.parameters(), 120)
+        self.optimizer.step()  # 가중치 업데이트
+
+        self.loss_item = loss.item()
+
+
+def main():
+    ## ROS node init
+    rospy.init_node("gail_tb3_stage_4")
+    pub_result = rospy.Publisher("result", Float32MultiArray, queue_size=5)
+    pub_get_action = rospy.Publisher("get_action", Float32MultiArray, queue_size=5)
+
+    result = Float32MultiArray()
+    get_action = Float32MultiArray()
+
+    state_size = 30
+    action_size = 5
+    expert = Expert(state_size, action_size)
+    load_episode = 0
+    scores, episodes = [], []
+    global_step = 0
+    start_time = time.time()
+    ## 출력용 변수
+    expert.loss_item = 0
+    ## 내부 계산용 변수
+    score = 0
+    goal = False
+    end_step = 150  ## 150 => 30s
+    is_random = 0
+
+    ## 모델을 불러온다.
+
+    if expert.load_dqn and expert.evaluation == False:
+        folder = os.path.dirname(os.path.realpath(__file__))
+        load_path = folder + "/stage_30-10_policy_net_1000" + ".tar"
+        checkpoint = torch.load(load_path)
+        load_episode = checkpoint["epoch"]
+        expert.policy_net.load_state_dict(checkpoint["model_state_dict"])
+        expert.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+        score = checkpoint["score"]
+
+        # expert.memory.load("memory1000")
+        print("[Learning] torch load success @episode {}".format(load_episode))
+
+    if expert.evaluation == True:
+        folder = os.path.dirname(os.path.realpath(__file__))
+        checkpoint = torch.load(folder + "/" + expert.target_ckpt)
+        expert.target_net.load_state_dict(checkpoint)
+        # expert.memory.load(folder + "/" + expert.target_mem) # no need
+
+    ## 총 훈련 횟수를 정한다.
+    epoches = load_episode + expert.epoches
+
+    ## main loop
+    for epoch in range(load_episode + 1, epoches + 1):
+        time_out = False
+        truncated = False
+        goal = False
+
+        state = expert.env.reset()
+        state = torch.tensor(state, dtype=torch.float32).unsqueeze(0).to(expert.device)
+
+        for local_step in range(expert.steps):
+            action = expert.getAction(state, global_step, load_episode)
+            observation, reward, truncated = expert.env.step(action)
+            reward = torch.tensor([reward], device=expert.device)
+
+            print(
+                "Steps: {:04d} {:3d} ({:6d}) Reward: {:.2f}({}) Memory: {:4d}".format(
+                    epoch,
+                    end_step - local_step,
+                    global_step,
+                    reward.cpu().detach().numpy().squeeze(),
+                    action.cpu().detach().numpy().squeeze(),
+                    len(expert.memory),
+                )
+            )
+
+            if reward >= 100:  ## Goal
+                goal = True
+            if local_step > end_step:  ## truncated for timeout.
+                time_out = True
+                truncated = True
+
+            if goal or truncated:
+                next_state = None
+            else:
+                next_state = torch.tensor(
+                    observation, dtype=torch.float32, device=expert.device
+                ).unsqueeze(0)
+            expert.memory.push(state, action, reward, next_state)
+            state = next_state
+
+            ## 학습
+            if expert.evaluation == False:
+                expert.trainModel(len(expert.memory), expert.train_start)
+                target_net_state_dict = expert.target_net.state_dict()
+                policy_net_state_dict = expert.policy_net.state_dict()
+                for key in policy_net_state_dict:
+                    target_net_state_dict[key] = policy_net_state_dict[
+                        key
+                    ] * expert.TAU + target_net_state_dict[key] * (1 - expert.TAU)
+                expert.target_net.load_state_dict(target_net_state_dict)
+
+            score += reward
+            get_action.data = [action, score, reward]
+            pub_get_action.publish(get_action)
+
+            global_step += 1
+
+            ## 종료조건 3가지(1. 목표지점 도달, 2. 충돌, 3. 시간초과)
+            if goal:
+                print("[Learning] Goal Reached. @step {}".format(local_step))
+
+                scores.append(score)
+                episodes.append(epoch)
+                m, s = divmod(int(time.time() - start_time), 60)
+                h, m = divmod(m, 60)
+                break
+
+            if truncated:
+                if time_out:
+                    print("[Learning] Time out. @step {}".format(local_step))
+                else:
+                    print("[Learning] Collision. @step {}".format(local_step))
+
+                scores.append(score)
+                episodes.append(epoch)
+                m, s = divmod(int(time.time() - start_time), 60)
+                h, m = divmod(m, 60)
+
+                param_keys = ["epsilon"]
+                param_values = [expert.epsilon]
+                param_dictionary = dict(zip(param_keys, param_values))
+                break
+
+    print("[Learning] Final score: {}".format(score.cpu().detach().numpy().squeeze()))
+
+    ## 폴더
+    index = time.localtime()
+    index = "{:02d}_{:02d}_{:02d}_{:02d}".format(
+        index.tm_mon, index.tm_mday, index.tm_hour, index.tm_min
+    )
+
+    # model
+    folder = os.path.dirname(os.path.realpath(__file__))
+    folder = folder.replace("gail_tb3/node", "gail_tb3/ckpt/{}".format(index))
+
+    # FILE GENERATION
+    if not os.path.exists(folder):
+        os.makedirs(folder)
+
+    if expert.evaluation == False:
+        torch.save(expert.policy_net.state_dict(), folder + "/policy_net.ckpt")
+        torch.save(expert.target_net.state_dict(), folder + "/target_net.ckpt")
+        torch.save(expert.optimizer.state_dict(), folder + "/optimizer.ckpt")
+        # 저장 memory
+        expert.memory.save(folder, epoch)
+
+    if expert.evaluation == True:
+        
+
+    rospy.spin()
+
+
+if __name__ == "__main__":
+    main()
