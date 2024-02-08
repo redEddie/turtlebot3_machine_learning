@@ -62,7 +62,7 @@ Detailed instruciton followes [Deep Q-Learning](). Below is to launch node and r
 
 그러한 맥락에서 발전하는 알고리즘이 모방학습입니다. 모방학습은 단순히 알고리즘을 학습시키는 의의뿐만 아니라 교시데이터만으로도 학습시킬 수 있다는 잠재력이 풍부한 알고리즘이라고 이애하면 좋겠습니다.
 
-Generative Adverserial Imiation Learning도 구현해놓았으니 자세한 내용은 해당 마크다운 파일에 적어놓겠습니다.
+Generative Adversarial Imiation Learning도 구현해놓았으니 자세한 내용은 해당 마크다운 파일에 적어놓겠습니다.
 
 
 ### TODO
