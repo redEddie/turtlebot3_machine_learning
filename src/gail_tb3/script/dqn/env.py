@@ -98,9 +98,31 @@ class Env_DQN:
         )
 
     def setReward(self, state, collision, action):
+        # scan_range = state[:-6]
+        # current_distance = state[-5]
+        # heading = state[-6]
+
+        # action = action.item()
+        # angle = heading + (pi / 8 * (action - 2))
+        # if angle > pi:
+        #     angle = angle - 2 * pi
+        # elif angle < -pi:
+        #     angle = angle + 2 * pi
+        # normalize_error = 2 * (1 - np.abs(angle) / pi)  # -1 ~ 1
+
+        # x = 2 * self.goal_distance - current_distance
+        # x = 1.5 * x / self.goal_distance  # 1 ~ ...
+
+        # y = min(scan_range)
+        # y_ref = 0.14 + 0.15
+        # y = 3 * (-math.exp(y_ref - y))  # 1-exp(0.3) = -1.35
+
+        # # print("factor 1: ", normalize_error * abs(x), "factor 2: ", y)
+        # reward = normalize_error * abs(x) if min(scan_range) > 0.25 else y
+        # reward = round(reward / 3, 2)
         scan_range = state[:-6]
-        current_distance = state[-5]
-        heading = state[-6]
+        current_distance = state[-5]  # distance from goal
+        heading = state[-6]  # heading error
 
         action = action.item()
         angle = heading + (pi / 8 * (action - 2))
@@ -108,18 +130,16 @@ class Env_DQN:
             angle = angle - 2 * pi
         elif angle < -pi:
             angle = angle + 2 * pi
-        normalize_error = 2 * (1 - np.abs(angle) / pi)  # -1 ~ 1
+        normalize_error = 1 - 2 * np.abs(angle) / pi  # -1 ~ 0
 
         x = 2 * self.goal_distance - current_distance
         x = 1.5 * x / self.goal_distance  # 1 ~ ...
 
         y = min(scan_range)
-        y_ref = 0.14 + 0.15
-        y = 3 * (-math.exp(y_ref - y))  # 1-exp(0.3) = -1.35
+        y_ref = 0.14 + 0.3
+        y = 3 * (1 - math.exp(y_ref - y))  # 1-exp(0.3) = -1.35
 
-        # print("factor 1: ", normalize_error * abs(x), "factor 2: ", y)
-        reward = normalize_error * abs(x) if min(scan_range) > 0.25 else y
-        reward = round(reward / 3, 2)
+        reward = min(normalize_error, x, y)
 
         if collision:
             reward = -500
