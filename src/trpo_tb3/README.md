@@ -29,6 +29,7 @@ Detailed instruciton followes [Deep Q-Learning](). Below is to launch node and r
    roslaunch dqn_ttb turtlebot3_dqn_stage_30.launch
    ```
 
+---
 
 ### About "Reinforcement Learning" and "Reward Function"
 
@@ -46,14 +47,22 @@ Detailed instruciton followes [Deep Q-Learning](). Below is to launch node and r
 
 <del>정해진 시간 내에 목표위치에 도달하지 않는 상황에 패널티를 주어 해결할 수 있지만, 위 영상을 보니 충분히 해결하지 못 한 것 같습니다.
 
-따라서 조금 더 엄밀한 보상함수를 설계한다면 더 나은 성능을 기대할 수 있게 되고, 따라서 목표위치까지의 거리에 대한 미분치를 이용하여 로봇이 목표위치로 향해 움직일 때 그리고 목표위치를 향해 빠르게 움직일 때 더 큰 보상을 받도록 할 수 있습니다.
+<del>따라서 조금 더 엄밀한 보상함수를 설계한다면 더 나은 성능을 기대할 수 있게 되고, 따라서 목표위치까지의 거리에 대한 미분치를 이용하여 로봇이 목표위치로 향해 움직일 때 그리고 목표위치를 향해 빠르게 움직일 때 더 큰 보상을 받도록 할 수 있습니다.
 
-수정된 보상함수는 다음과 같습니다. </del>
+<del>수정된 보상함수는 다음과 같습니다.
 
     `delta_distance = self.previous_distance - current_distance
         self.previous_distance = current_distance
 
         reward = max(0.1, abs(normalized_distance)) * delta_distance * 100`
+
+### Imitation Learning
+
+보상함수를 수정하는 방식으로 성능을 좋게 할 순 있지만(제 trpo는 DQN보다 간단하게 보상함수를 짜주었더니 잘 안 되네요..), 잘 동작하는 알고리즘을 바탕으로 다른 알고리즘도 학습시킬 수 있다면 좋을 것 같습니다.
+
+그러한 맥락에서 발전하는 알고리즘이 모방학습입니다. 모방학습은 단순히 알고리즘을 학습시키는 의의뿐만 아니라 교시데이터만으로도 학습시킬 수 있다는 잠재력이 풍부한 알고리즘이라고 이애하면 좋겠습니다.
+
+Generative Adverserial Imiation Learning도 구현해놓았으니 자세한 내용은 해당 마크다운 파일에 적어놓겠습니다.
 
 
 ### TODO
