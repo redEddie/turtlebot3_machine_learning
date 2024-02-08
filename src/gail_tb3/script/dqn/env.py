@@ -13,7 +13,7 @@ from .respawnGoal import Respawn
 from numpy import tanh
 
 
-class Env:
+class Env_DQN:
     def __init__(self, action_size):
         self.goal_x = 0
         self.goal_y = 0
@@ -33,7 +33,6 @@ class Env:
         goal_distance = round(
             math.hypot(self.goal_x - self.position.x, self.goal_y - self.position.y), 2
         )
-
         return goal_distance
 
     def getOdometry(self, odom):

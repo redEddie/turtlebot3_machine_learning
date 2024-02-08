@@ -6,6 +6,7 @@ import numpy as np
 import random
 import time
 import sys
+import statistics
 
 import torch
 import torch.nn as nn
@@ -18,8 +19,11 @@ sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
 import rospy
 from std_msgs.msg import Float32MultiArray
 
-from script.dqn.dqn_env import Env
+from script.dqn.env import Env_DQN
+from script.gail.env import Env_GAIL
 from script.dqn.dqn_mem import ReplayMemory
+from script.gail.gail import *
+from script.gail.funcs import *
 
 
 class DQN(nn.Module):
@@ -40,12 +44,6 @@ class DQN(nn.Module):
         return output
 
 
-class Checkpoint:
-    def __init__(self):
-        self.folder = os.path.dirname(os.path.realpath(__file__))
-        self.folder = self.folder.replace("gail_tb3/node", "gail_tb3/ckpt")
-
-
 class Expert:
     def __init__(self, state_size, action_size):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -56,12 +54,12 @@ class Expert:
         self.load_file = "stage_30-10_policy_net_1000"
         self.memory_file = "memory1000"
 
-        self.evaluation = True
+        self.evaluation = False
         self.target_ckpt = "target_net.ckpt"
         self.target_mem = "memory1030.pkl"
 
-        self.epoches = 30  ## 500 => 1.5h, 8000 => 1d
-        self.steps = 6000  ## 40e => 5000
+        self.epoches = 6000  # for train as you want
+        self.steps = 200  ## 40e => 5000
         self.GAMMA = 0.99  # discount factor
         self.lr = 1e-4
         self.epsilon = 1.0
@@ -72,7 +70,7 @@ class Expert:
         self.train_start = 64
         self.TAU = 0.8
 
-        self.env = Env(action_size)
+        self.env = Env_DQN(action_size)
         self.state_size = state_size
         self.action_size = action_size
         self.policy_net = DQN(state_size, action_size).to(self.device)
@@ -161,6 +159,36 @@ class Expert:
         self.loss_item = loss.item()
 
 
+class GAIL:
+    def __init__(self, state_dim, action_dim, discrete):
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+        self.pi = PolicyNetwork(state_dim, action_dim, discrete).to(self.device)
+        self.v = ValueNetwork(state_dim).to(self.device)
+        self.d = Discriminator(state_dim, action_dim, discrete).to(self.device)
+        self.opt_d = torch.optim.Adam(self.d.parameters())
+
+        self.demo_epochs = 2  # use to return mean of rewards of demos
+        self.steps = 200
+
+        self.env = Env_GAIL(action_dim)
+
+        self.gae_gamma = 0.99
+        self.gae_lambda = 0.99
+        self.eps = 1e-2
+        self.cg_damping = 1e-1
+        self.max_kl = 1e-2
+        self.lambda_ = 1e-3
+
+    def getAction(self, state, global_step, load_episode):
+        self.pi.eval()
+        state = torch.tensor(state, dtype=torch.float32).to(self.device)
+        distb = self.pi(state)
+        action = distb.sample().detach().cpu().numpy()
+
+        return action
+
+
 def main():
     ## ROS node init
     rospy.init_node("gail_tb3_stage_4")
@@ -204,9 +232,17 @@ def main():
         checkpoint = torch.load(folder + "/" + expert.target_ckpt)
         expert.target_net.load_state_dict(checkpoint)
         # expert.memory.load(folder + "/" + expert.target_mem) # no need
+        gail = GAIL(state_dim=30, action_dim=2, discrete=False)
+
+        exp_rwd_iter = []
+
+        exp_obs = []
+        exp_acts = []
 
     ## 총 훈련 횟수를 정한다.
     epoches = load_episode + expert.epoches
+    if expert.evaluation:
+        epoches = gail.demo_epochs
 
     ## main loop
     for epoch in range(load_episode + 1, epoches + 1):
@@ -214,24 +250,34 @@ def main():
         truncated = False
         goal = False
 
+        if expert.evaluation == True:
+            ep_obs = []
+            ep_rwds = []
+
         state = expert.env.reset()
         state = torch.tensor(state, dtype=torch.float32).unsqueeze(0).to(expert.device)
 
         for local_step in range(expert.steps):
             action = expert.getAction(state, global_step, load_episode)
+            if expert.evaluation == True:
+                ep_obs.append(state.cpu().detach().numpy().squeeze())
+                exp_obs.append(state.cpu().detach().numpy().squeeze())
+                exp_acts.append(action.cpu().detach().numpy().squeeze())
             observation, reward, truncated = expert.env.step(action)
+            if expert.evaluation == True:
+                ep_rwds.append(reward)
             reward = torch.tensor([reward], device=expert.device)
 
-            print(
-                "Steps: {:04d} {:3d} ({:6d}) Reward: {:.2f}({}) Memory: {:4d}".format(
-                    epoch,
-                    end_step - local_step,
-                    global_step,
-                    reward.cpu().detach().numpy().squeeze(),
-                    action.cpu().detach().numpy().squeeze(),
-                    len(expert.memory),
-                )
-            )
+            # print(
+            #     "Steps: {:4d} {:3d} ({:6d}) Reward: {:.2f}({}) Memory: {:4d}".format(
+            #         epoch,
+            #         end_step - local_step,
+            #         global_step,
+            #         reward.cpu().detach().numpy().squeeze(),
+            #         action.cpu().detach().numpy().squeeze(),
+            #         len(expert.memory),
+            #     )
+            # )
 
             if reward >= 100:  ## Goal
                 goal = True
@@ -246,6 +292,7 @@ def main():
                     observation, dtype=torch.float32, device=expert.device
                 ).unsqueeze(0)
             expert.memory.push(state, action, reward, next_state)
+
             state = next_state
 
             ## 학습
@@ -267,7 +314,7 @@ def main():
 
             ## 종료조건 3가지(1. 목표지점 도달, 2. 충돌, 3. 시간초과)
             if goal:
-                print("[Learning] Goal Reached. @step {}".format(local_step))
+                print("[DQN] Goal Reached. @step {}".format(local_step))
 
                 scores.append(score)
                 episodes.append(epoch)
@@ -277,9 +324,9 @@ def main():
 
             if truncated:
                 if time_out:
-                    print("[Learning] Time out. @step {}".format(local_step))
+                    print("[DQN] Time out. @step {}".format(local_step))
                 else:
-                    print("[Learning] Collision. @step {}".format(local_step))
+                    print("[DQN] Collision. @step {}".format(local_step))
 
                 scores.append(score)
                 episodes.append(epoch)
@@ -291,7 +338,17 @@ def main():
                 param_dictionary = dict(zip(param_keys, param_values))
                 break
 
-    print("[Learning] Final score: {}".format(score.cpu().detach().numpy().squeeze()))
+        if expert.evaluation == True:
+            print(
+                "Epoch: {:2d} Reward: {:.2f}".format(
+                    epoch, score.cpu().detach().numpy().squeeze()
+                )
+            )
+            exp_rwd_iter.append(ep_rwds)
+            ep_obs = torch.tensor(np.array(ep_obs), device=gail.device)
+            ep_rwds = torch.tensor(ep_rwds, device=gail.device)
+
+    print("[DQN] Final score: {}".format(score.cpu().detach().numpy().squeeze()))
 
     ## 폴더
     index = time.localtime()
@@ -314,10 +371,242 @@ def main():
         # 저장 memory
         expert.memory.save(folder, epoch)
 
-    if expert.evaluation == True:
-        
+    if expert.evaluation == False:
+        print("DQN Learning Finished")
+        rospy.spin()
 
-    rospy.spin()
+    # GAIL
+    for _ in range(len(exp_rwd_iter)):
+        mean = +np.mean(exp_rwd_iter[_])
+    exp_rwd_mean = mean / len(exp_rwd_iter)
+    print("Expert Reward Mean: {}".format(exp_rwd_mean))
+    # print("Expert Reward Iterations:")
+    # for reward in exp_rwd_iter:
+    #     print(f"  {reward}")
+    # print()
+
+    # expert data
+    exp_obs = np.array(exp_obs)
+    exp_obs = torch.tensor(exp_obs, device=gail.device)
+    exp_acts = np.array(exp_acts)
+    exp_acts = torch.tensor(exp_acts, device=gail.device)
+
+    # train
+    print("[GAIL] Novice trajectory generation started")
+    rwd_iter_means = []
+    for i in range(gail.demo_epochs):
+        rwd_iter = []
+
+        obs = []
+        acts = []
+        rets = []
+        advs = []
+        gms = []
+
+        steps = 0
+        print("test")
+        while steps < gail.steps:
+            ep_obs = []
+            ep_acts = []
+            ep_rwds = []
+            ep_costs = []
+            ep_disc_costs = []
+            ep_gms = []
+            ep_lmbs = []
+
+            t = 0
+            done = False
+
+            ob = gail.env.reset()
+            print("test")
+            ob = torch.tensor(ob, dtype=torch.float32).to(gail.device)
+            for step in range(gail.steps):
+                act = gail.getAction(state, global_step, load_episode)
+
+                ep_obs.append(state.cpu().detach().numpy().squeeze())
+                obs.append(state.cpu().detach().numpy().squeeze())
+
+                ep_acts.append(act.cpu().detach().numpy().squeeze())
+                acts.append(act.cpu().detach().numpy().squeeze())
+
+                observation, rwd, truncated = gail.env.step(act)
+
+                ep_rwds.append(rwd)
+                ep_gms.append(gail.gae_gamma**t)
+                ep_lmbs.append(gail.gae_lambda**t)
+
+                t += 1
+                steps += 1
+
+            rwd_iter.append(np.sum(ep_rwds))
+
+            # calculate returns
+            ep_obs = torch.tensor(np.array(ep_obs), device=gail.device)
+            ep_acts = torch.tensor(np.array(ep_acts), device=gail.device)
+            ep_rwds = torch.tensor(ep_rwds, device=gail.device)
+            ep_gms = torch.tensor(ep_gms, device=gail.device)
+            ep_lmbs = torch.tensor(ep_lmbs, device=gail.device)
+
+            ep_costs = (-1) * torch.log(gail.d(ep_obs, ep_acts)).squeeze().detach()
+            ep_disc_costs = ep_gms * ep_costs
+
+            ep_disc_rets = torch.tensor(
+                [sum(ep_disc_costs[i:]) for i in range(t)],
+                dtype=torch.float32,
+                device="cuda:0",
+            )
+            ep_rets = ep_disc_rets / ep_gms
+
+            rets.append(ep_rets)
+
+            # advantage estimation
+            gail.v.eval()
+            curr_vals = gail.v(ep_obs).detach()
+            next_vals = torch.cat(
+                (
+                    gail.v(ep_obs)[1:],
+                    torch.tensor([[0.0]], dtype=torch.float32, device="cuda:0"),
+                )
+            ).detach()
+            ep_deltas = ep_costs.unsqueeze(-1) + gail.gae_gamma * next_vals - curr_vals
+
+            ep_advs = torch.tensor(
+                [
+                    ((ep_gms * ep_lmbs)[: t - j].unsqueeze(-1) * ep_deltas[j:]).sum()
+                    for j in range(t)
+                ],
+                dtype=torch.float32,
+            )
+
+            advs.append(ep_advs)
+
+            gms.append(ep_gms)
+
+        for _ in range(len(rwd_iter)):
+            mean = +np.mean(rwd_iter[_])
+            mean = mean / len(rwd_iter)
+        rwd_iter_means.append(mean)
+        print("[GAIL] Train: {} Reward Mean: {}".format(i + 1, mean))
+
+        obs = torch.tensor(np.array(obs), device="cuda:0")
+        acts = torch.tensor(np.array(acts), device="cuda:0")
+        rets = torch.cat(rets)
+        advs = torch.cat(advs)
+        gms = torch.cat(gms)
+
+        advs = ((advs - advs.mean()) / advs.std()).to(device)
+
+        # train discriminator
+        gail.d.train()
+        exp_scores = gail.d.get_logits(exp_obs, exp_acts)
+        nov_scores = gail.d.get_logits(obs, acts)
+
+        gail.opt_d.zero_grad()
+        loss = torch.nn.functional.binary_cross_entropy_with_logits(
+            exp_scores, torch.zeros_like(exp_scores)
+        ) + torch.nn.functional.binary_cross_entropy_with_logits(
+            nov_scores, torch.ones_like(nov_scores)
+        )
+        loss.backward()
+        gail.opt_d.step()
+
+        # train value function(이것도 backprop을 풀어쓴거)
+        gail.v.train()
+        old_params = get_flat_params(gail.v).detach()
+        # value function의 모든 파라미터를 가져옴.
+        old_v = gail.v(obs).detach()
+        # 업데이트 하기 전에 value function을 한번 통과시켜 state value를 저장해둠.
+
+        def constraint():  # value fn.의 gradient를 구함.
+            return ((old_v - gail.v(obs)) ** 2).mean()
+
+        grad_diff = get_flat_grads(constraint(), gail.v)
+
+        def Hv(v):
+            hessian = get_flat_grads(torch.dot(grad_diff, v), gail.v).detach()
+
+            return hessian
+
+        g = get_flat_grads(
+            ((-1) * (gail.v(obs).squeeze() - rets) ** 2).mean(), gail.v
+        ).detach()  # V - GAE? or V - advantage, 이를 v와 비교하여 gradient를 구함.
+        s = conjugate_gradient(Hv, g).detach()
+
+        Hs = Hv(s).detach()
+        alpha = torch.sqrt(2 * gail.eps / torch.dot(s, Hs))
+
+        new_params = old_params + alpha * s
+
+        set_params(gail.v, new_params)
+
+        # train policy
+        gail.pi.train()
+        old_params = get_flat_params(gail.pi).detach()
+        old_distb = gail.pi(obs)
+
+        def L():
+            distb = gail.pi(obs)
+
+            return (  # TRPO의 loss
+                advs  # advantage 여기 쓰임
+                * torch.exp(
+                    distb.log_prob(acts) - old_distb.log_prob(acts).detach(),
+                )
+            ).mean()
+
+        def kld():
+            distb = gail.pi(obs)
+
+            if gail.discrete:
+                old_p = old_distb.probs.detach()
+                p = distb.probs
+
+                return (old_p * (torch.log(old_p) - torch.log(p))).sum(-1).mean()
+
+            else:
+                old_mean = old_distb.mean.detach()
+                old_cov = old_distb.covariance_matrix.sum(-1).detach()
+                mean = distb.mean
+                cov = distb.covariance_matrix.sum(-1)
+
+                return (0.5) * (
+                    (old_cov / cov).sum(-1)
+                    + (((old_mean - mean) ** 2) / cov).sum(-1)
+                    - gail.action_dim
+                    + torch.log(cov).sum(-1)
+                    - torch.log(old_cov).sum(-1)
+                ).mean()
+
+        grad_kld_old_param = get_flat_grads(kld(), gail.pi)
+
+        def Hv(v):
+            hessian = get_flat_grads(torch.dot(grad_kld_old_param, v), gail.pi).detach()
+
+            return hessian + gail.cg_damping * v
+
+        g = get_flat_grads(L(), gail.pi).detach()
+
+        s = conjugate_gradient(Hv, g).detach()
+        Hs = Hv(s).detach()
+
+        new_params = rescale_and_linesearch(
+            g, s, Hs, gail.max_kl, L, kld, old_params, gail.pi
+        )
+
+        disc_causal_entropy = ((-1) * gms * gail.pi(obs).log_prob(acts)).mean()
+        grad_disc_causal_entropy = get_flat_grads(disc_causal_entropy, gail.pi)
+        new_params += gail.lambda_ * grad_disc_causal_entropy
+
+        set_params(gail.pi, new_params)
+
+    print("GAIL Training Finished")
+
+    results = exp_rwd_mean, rwd_iter_means
+    print("exp_rwd_mean: ", exp_rwd_mean, "rwd_iter_means: ", rwd_iter_means)
+
+    torch.save(gail.pi.state_dict(), folder + "/gail_pi.ckpt")
+    torch.save(gail.v.state_dict(), folder + "/gail_v.ckpt")
+    torch.save(gail.d.state_dict(), folder + "/gail_d.ckpt")
 
 
 if __name__ == "__main__":
