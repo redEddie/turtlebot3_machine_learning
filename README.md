@@ -1,8 +1,5 @@
 # Turtlebot3 Machine Learning
 
-1. 터틀봇 DQN
-
-
 # Description
 
 로보티즈의 [공식 튜토리얼](https://emanual.robotis.com/docs/en/platform/turtlebot3/machine_learning/#machine-learning)에서 시작하였습니다.
@@ -21,6 +18,7 @@
 1. [Deep Q-Learning](./src/dqn_ttb/README.md)
 1. [Trust Region Policy Optimization](./src/trpo_tb3/README.md)
 1. [Generative Adversarial Imiataion Learning](./src/gail_tb3/README.md)
+1. [Q-Learning with Diffusion Policy](./src/dfql_tb3/README.md)
 
 
 # Possible Errors
@@ -39,7 +37,5 @@
 
 # TODO
 
-represent results as graph
-
-save trajectory for each episode
-
+* 알고리즘의 성능을 plot하기
+* gail의 env 겹치는 것 고치기(service에 대해서 공부해야함)
