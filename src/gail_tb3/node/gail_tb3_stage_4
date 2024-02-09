@@ -54,11 +54,11 @@ class Expert:
         self.load_file = "stage_30-10_policy_net_1000"
         self.memory_file = "memory1000"
 
-        self.evaluation = False
+        self.evaluation = True
         self.target_ckpt = "target_net.ckpt"
-        self.target_mem = "memory1030.pkl"
+        self.target_mem = "memory1050.pkl"
 
-        self.epoches = 6000  # for train as you want
+        self.epoches = 50  # for train as you want
         self.steps = 200  ## 40e => 5000
         self.GAMMA = 0.99  # discount factor
         self.lr = 1e-4
@@ -217,14 +217,15 @@ def main():
 
     if expert.load_dqn and expert.evaluation == False:
         folder = os.path.dirname(os.path.realpath(__file__))
-        load_path = folder + "/stage_30-10_policy_net_1000" + ".tar"
+        load_path = folder + "/stage_1100.tar"
         checkpoint = torch.load(load_path)
-        load_episode = checkpoint["epoch"]
-        expert.policy_net.load_state_dict(checkpoint["model_state_dict"])
-        expert.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
-        score = checkpoint["score"]
+        load_episode = checkpoint["epoches"]
+        expert.policy_net.load_state_dict(checkpoint["policy_net"])
+        expert.target_net.load_state_dict(checkpoint["target_net"])
+        expert.optimizer.load_state_dict(checkpoint["optimizer"])
+        # score = checkpoint["score"]
+        expert.memory.load("memory{}".format(load_episode))
 
-        # expert.memory.load("memory1000")
         print("[Learning] torch load success @episode {}".format(load_episode))
 
     if expert.evaluation == True:
@@ -365,9 +366,19 @@ def main():
         os.makedirs(folder)
 
     if expert.evaluation == False:
-        torch.save(expert.policy_net.state_dict(), folder + "/policy_net.ckpt")
         torch.save(expert.target_net.state_dict(), folder + "/target_net.ckpt")
-        torch.save(expert.optimizer.state_dict(), folder + "/optimizer.ckpt")
+        torch.save(
+            {
+                "score": score,
+                "policy_net": expert.policy_net.state_dict(),
+                "target_net": expert.target_net.state_dict(),
+                "optimizer": expert.optimizer.state_dict(),
+                "epoches": epoches,
+            },
+            folder + "/stage_{}.tar".format(epoch, score),
+        )
+        # torch.save(expert.policy_net.state_dict(), folder + "/policy_net.ckpt")
+        # torch.save(expert.optimizer.state_dict(), folder + "/optimizer.ckpt")
         # 저장 memory
         expert.memory.save(folder, epoch)
 

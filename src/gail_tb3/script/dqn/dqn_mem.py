@@ -37,8 +37,9 @@ class ReplayMemory(object):
         )
 
     def load(self, file_name):
-        # folder = os.path.dirname(os.path.realpath(__file__))
-        # load_path = folder + "/" + file_name + ".pkl"
+        folder = os.path.dirname(os.path.realpath(__file__))
+        folder = folder.replace("script/dqn", "node")
+        load_path = folder + "/" + file_name + ".pkl"
 
-        with open(file_name, "rb") as infile:
+        with open(load_path, "rb") as infile:
             self.memory = dill.load(infile)
