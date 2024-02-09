@@ -54,7 +54,7 @@ class Expert:
         self.load_file = "stage_30-10_policy_net_1000"
         self.memory_file = "memory1000"
 
-        self.evaluation = True
+        self.evaluation = False
         self.target_ckpt = "target_net.ckpt"
         self.target_mem = "memory1050.pkl"
 
@@ -217,7 +217,7 @@ def main():
 
     if expert.load_dqn and expert.evaluation == False:
         folder = os.path.dirname(os.path.realpath(__file__))
-        load_path = folder + "/stage_1100.tar"
+        load_path = folder + "/stage_1150.tar"
         checkpoint = torch.load(load_path)
         load_episode = checkpoint["epoches"]
         expert.policy_net.load_state_dict(checkpoint["policy_net"])
@@ -315,7 +315,11 @@ def main():
 
             ## 종료조건 3가지(1. 목표지점 도달, 2. 충돌, 3. 시간초과)
             if goal:
-                print("[DQN] Goal Reached. @step {}".format(local_step))
+                print(
+                    "[DQN] Goal Reached. @step {} ({}/{})".format(
+                        local_step, epoch, epoches
+                    )
+                )
 
                 scores.append(score)
                 episodes.append(epoch)
@@ -375,7 +379,7 @@ def main():
                 "optimizer": expert.optimizer.state_dict(),
                 "epoches": epoches,
             },
-            folder + "/stage_{}.tar".format(epoch, score),
+            folder + "/stage_{}.tar".format(epoch),
         )
         # torch.save(expert.policy_net.state_dict(), folder + "/policy_net.ckpt")
         # torch.save(expert.optimizer.state_dict(), folder + "/optimizer.ckpt")

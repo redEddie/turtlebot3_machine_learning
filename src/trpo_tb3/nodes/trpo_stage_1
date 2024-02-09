@@ -307,7 +307,7 @@ def main():
     get_action = Float32MultiArray()
 
     # (Python) agent init
-    state_size = 28
+    state_size = 26
     action_size = 2
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     agent = TRPO(state_size, action_size, discrete=False, stage=stage).to(device)

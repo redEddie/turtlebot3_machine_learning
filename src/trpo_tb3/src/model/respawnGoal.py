@@ -16,10 +16,6 @@ class Respawn:
             "turtlebot3_machine_learning/src/trpo_tb3/src/model",
             "turtlebot3_simulations/turtlebot3_gazebo/models/turtlebot3_square/goal_box/model.sdf",
         )
-        # self.modelPath = self.modelPath.replace('dqn_ttb/src/turtlebot3_dqn',
-        #                                        'turtlebot3_simulations/turtlebot3_gazebo/models/turtlebot3_square/goal_box/model.sdf')
-        # self.modelPath = self.modelPath.replace('turtlebot3_machine_learning/turtlebot3_dqn/src/turtlebot3_dqn',
-        #                                         'turtlebot3_simulations/turtlebot3_gazebo/models/turtlebot3_square/goal_box/model.sdf')
         self.f = open(self.modelPath, "r")
         self.model = self.f.read()
         self.stage = rospy.get_param("/stage_number")
@@ -157,7 +153,6 @@ class Respawn:
                 ]
 
                 self.index = random.randrange(0, 13)
-                print(self.index, self.last_index)
                 if self.last_index == self.index:
                     position_check = True
                 else:

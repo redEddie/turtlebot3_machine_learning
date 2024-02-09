@@ -153,7 +153,6 @@ class Respawn:
                 ]
 
                 self.index = random.randrange(0, 13)
-                print(self.index, self.last_index)
                 if self.last_index == self.index:
                     position_check = True
                 else:

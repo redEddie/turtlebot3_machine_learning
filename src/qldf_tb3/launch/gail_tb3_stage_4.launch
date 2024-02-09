@@ -1,8 +1,0 @@
-<launch>
-  <arg name="stage" default="4"/>
-  <param name="stage_number"  value="$(arg stage)"/>
-  <node pkg="gail_tb3" type="gail_tb3_stage_4" name="gail_tb3_stage_4" output="screen" />
-
-  <node pkg="gail_tb3" type="combination_obstacle_1" name="combination_obstacle_1" output="screen" />
-  <node pkg="gail_tb3" type="combination_obstacle_2" name="combination_obstacle_2" output="screen" />
-</launch>

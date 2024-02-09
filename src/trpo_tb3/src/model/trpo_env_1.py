@@ -47,6 +47,9 @@ class Env:
         self.respawn_goal = Respawn()
         self.previous_distance = 0
 
+        # self.reset_proxy()
+        # self.respawn_goal.deleteModel()
+
     def getGoalDistace(self):
         goal_distance = round(
             math.hypot(self.goal_x - self.position.x, self.goal_y - self.position.y), 2
@@ -73,7 +76,7 @@ class Env:
 
         self.heading = round(heading, 2)
 
-    def getState(self, scan, current_linear_x, current_angular_z):
+    def getState(self, scan):
         scan_range = []
         heading = self.heading
         min_range = 0.14
@@ -104,41 +107,41 @@ class Env:
         if min_range > min(scan_range) > 0:
             collision = True
 
-        print("current_linear_x: ", current_linear_x)
-        if current_linear_x == None:
-            current_linear_x = 0
-        if current_angular_z == None:
-            current_angular_z = 0
+        # print("current_linear_x: ", current_linear_x)
+        # if current_linear_x == None:
+        #     current_linear_x = 0
+        # if current_angular_z == None:
+        #     current_angular_z = 0
 
         return (
             scan_range
             + [
                 heading,
                 current_distance,
-                current_linear_x,
-                current_angular_z,
+                # current_linear_x,
+                # current_angular_z,
             ],
             collision,
-        )  # 24 + 5 and 1
+        )  # state = 24 + 2
 
     def setReward(
         self, state, collision, linear_vel, ang_vel, steps, num_steps_per_iter
     ):
-        scan_range = state[:-4]
-        heading = state[-4]
-        current_distance = state[-3]
-        current_linear_x = state[-2]
-        current_angular_z = state[-1]
-
+        scan_range = state[:-2]
+        heading = state[-2]
+        current_distance = state[-1]
+        # self.goal_distance = self.getGoalDistace()
         # distance = self.goal_distance - current_distance
-        delta_distance = (1 - abs(heading)) * current_linear_x
-        # self.previous_distance = current_distance
 
-        angle = heading + ang_vel * pi
+        angle = heading + ang_vel * 0.1
+        if angle > 2 * pi:
+            angle -= 2 * pi
+        elif angle < -2 * pi:
+            angle += 2 * pi
 
-        print(current_linear_x, heading, delta_distance, abs(angle))
-        reward = 3 - (delta_distance) * (abs(angle))
-        reward = round(reward, 2)
+        print("distance: {:4f}, angle: {:4f}".format(current_distance, abs(angle)))
+        reward = 3 * (current_distance) * (abs(angle))
+        reward = 1 - round(reward, 2)
 
         if collision:
             print("[Learning] Collision!!")
@@ -169,8 +172,6 @@ class Env:
     def step(self, action, steps, num_steps_per_iter):
         max_linear_vel = 0.22
         max_angular_vel = 2.84
-        # print("\naction[0]: ", action[0])
-        # print("action[1]: ", action[1])
 
         linear_vel = action[0] * max_linear_vel
         ang_vel = action[1] * max_angular_vel
@@ -184,25 +185,23 @@ class Env:
         self.pub_cmd_vel.publish(vel_cmd)
 
         data = None
-        current_linear_x = None
-        current_linear_y = None
-        current_ang_z = None
+        # current_linear_x = None
+        # current_ang_z = None
         while data is None:
             try:
                 data = rospy.wait_for_message("scan", LaserScan, timeout=5)
             except:
                 pass
 
-        while current_linear_x and current_ang_z is None:
-            try:
-                odom = rospy.wait_for_message("odom", Odometry, timeout=5)
-                current_linear_x = odom.twist.twist.linear.x
-                # current_linear_y = odom.twist.twist.linear.y
-                current_ang_z = odom.twist.twist.angular.z
-            except:
-                pass
+        # while current_linear_x and current_ang_z is None:
+        #     try:
+        #         odom = rospy.wait_for_message("odom", Odometry, timeout=5)
+        #         current_linear_x = odom.twist.twist.linear.x
+        #         current_ang_z = odom.twist.twist.angular.z
+        #     except:
+        #         pass
 
-        state, collision = self.getState(data, current_linear_x, current_ang_z)
+        state, collision = self.getState(data)
         reward = self.setReward(
             state, collision, linear_vel, ang_vel, steps, num_steps_per_iter
         )
@@ -218,29 +217,28 @@ class Env:
             print("gazebo/reset_simulation service call failed")
 
         data = None
-        current_linear_x = None
-        current_linear_y = None
-        current_ang_z = None
+        # current_linear_x = None
+        # current_ang_z = None
         while data is None:
             try:
                 data = rospy.wait_for_message("scan", LaserScan, timeout=5)
             except:
                 pass
 
-        while current_linear_x and current_ang_z is None:
-            try:
-                odom = rospy.wait_for_message("odom", Odometry, timeout=5)
-                current_linear_x = odom.twist.twist.linear.x
-                # current_linear_y = odom.twist.twist.linear.y
-                current_ang_z = odom.twist.twist.angular.z
-            except:
-                pass
+        # while current_linear_x and current_ang_z is None:
+        #     try:
+        #         odom = rospy.wait_for_message("odom", Odometry, timeout=5)
+        #         current_linear_x = odom.twist.twist.linear.x
+        #         # current_linear_y = odom.twist.twist.linear.y
+        #         current_ang_z = odom.twist.twist.angular.z
+        #     except:
+        #         pass
 
         if self.initGoal:
             self.goal_x, self.goal_y = self.respawn_goal.getPosition()
             self.initGoal = False
 
         self.goal_distance = self.getGoalDistace()
-        state, collision = self.getState(data, current_linear_x, current_ang_z)
+        state, collision = self.getState(data)
 
         return np.asarray(state)

@@ -16,9 +16,9 @@
 # Algorithms
 
 1. [Deep Q-Learning](./src/dqn_ttb/README.md)
-1. [Trust Region Policy Optimization](./src/trpo_tb3/README.md)
-1. [Generative Adversarial Imiataion Learning](./src/gail_tb3/README.md)
-1. [Q-Learning with Diffusion Policy](./src/dfql_tb3/README.md)
+2. [Trust Region Policy Optimization(developing)](./src/trpo_tb3/README.md)
+3. [Generative Adversarial Imiataion Learning(developing)](./src/gail_tb3/README.md)
+4. [Q-Learning with Diffusion Policy(not implemented)](./src/dfql_tb3/README.md)
 
 
 # Possible Errors
