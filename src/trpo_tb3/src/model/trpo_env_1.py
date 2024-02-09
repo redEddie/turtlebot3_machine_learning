@@ -104,6 +104,12 @@ class Env:
         if min_range > min(scan_range) > 0:
             collision = True
 
+        print("current_linear_x: ", current_linear_x)
+        if current_linear_x == None:
+            current_linear_x = 0
+        if current_angular_z == None:
+            current_angular_z = 0
+
         return (
             scan_range
             + [
@@ -121,17 +127,18 @@ class Env:
         scan_range = state[:-4]
         heading = state[-4]
         current_distance = state[-3]
+        current_linear_x = state[-2]
+        current_angular_z = state[-1]
 
-        distance = self.goal_distance - current_distance
-        normalized_distance = distance / self.goal_distance
+        # distance = self.goal_distance - current_distance
+        delta_distance = (1 - abs(heading)) * current_linear_x
+        # self.previous_distance = current_distance
 
-        delta_distance = self.previous_distance - current_distance
-        self.previous_distance = current_distance
+        angle = heading + ang_vel * pi
 
-        reward = max(0.1, abs(normalized_distance)) * delta_distance * 100
+        print(current_linear_x, heading, delta_distance, abs(angle))
+        reward = 3 - (delta_distance) * (abs(angle))
         reward = round(reward, 2)
-
-        # print("\n reward: ", round(reward, 2))
 
         if collision:
             print("[Learning] Collision!!")
@@ -158,9 +165,6 @@ class Env:
             self.get_goalbox = False
 
         return reward
-
-    def round_value_upto_2(self, value):
-        return round(value, 2) if value is not None else 0
 
     def step(self, action, steps, num_steps_per_iter):
         max_linear_vel = 0.22
@@ -198,10 +202,6 @@ class Env:
             except:
                 pass
 
-        current_linear_x = self.round_value_upto_2(current_linear_x)
-        current_linear_y = self.round_value_upto_2(current_linear_y)
-        current_ang_z = self.round_value_upto_2(current_ang_z)
-
         state, collision = self.getState(data, current_linear_x, current_ang_z)
         reward = self.setReward(
             state, collision, linear_vel, ang_vel, steps, num_steps_per_iter
@@ -235,10 +235,6 @@ class Env:
                 current_ang_z = odom.twist.twist.angular.z
             except:
                 pass
-
-        current_linear_x = self.round_value_upto_2(current_linear_x)
-        # current_linear_y = self.round_value_upto_2(current_linear_y)
-        current_ang_z = self.round_value_upto_2(current_ang_z)
 
         if self.initGoal:
             self.goal_x, self.goal_y = self.respawn_goal.getPosition()
