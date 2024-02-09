@@ -11,3 +11,7 @@ Comming soon
 
 ### Simulation
 
+(준비 중입니다.)
+
+1. expert를 더 학습시키고 싶을 때
+2. GAIL을 동작시키고 싶을 때
