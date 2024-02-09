@@ -37,5 +37,8 @@
 
 # TODO
 
-* 알고리즘의 성능을 plot하기
-* gail의 env 겹치는 것 고치기(service에 대해서 공부해야함)
+* (DQN) 알고리즘의 성능을 plot하기
+* (GAIL) gail의 env 겹치는 것 고치기(service에 대해서 공부해야함)
+* (TRPO) "steps" dosent go 0 at early end.
+* (TRPO) eval 코드 부재
+* (TRPO) 보상함수 개선 필요
